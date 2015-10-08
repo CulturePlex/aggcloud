@@ -1,15 +1,26 @@
 # -*- coding: utf-8 -*-
+try:
+    import ujson as json
+except ImportError:
+    import json  # NOQA
+
 from app import SylvaApp
 from gooey import Gooey, GooeyParser
 
 running = True
 
+CONFIG_FILE = 'config.json'
+
 
 @Gooey(dump_build_config=True,
        program_name="SylvaDB - client")
 def main():
-    settings_msg = 'SylvaDB Interface'
-    file_help_msg = "Name of the file you want to process"
+
+    with open(CONFIG_FILE) as data_file:
+        data = json.load(data_file)
+
+    settings_msg = data['config_settings']['settings_msg']
+    file_help_msg = data['config_settings']['file_help_msg']
 
     parser = GooeyParser(description=settings_msg)
     parser.add_argument("FileChooser", help=file_help_msg,

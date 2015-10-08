@@ -1,5 +1,21 @@
 {
-  "graph": "betis",
-  "user": "user",
-  "password": "password"
+    "config_settings": {
+        "settings_msg": "SylvaDB Interface",
+        "file_help_msg": "Name of the file you want to process"
+    },
+
+    "graph_settings": {
+        "graph": "graph",
+        "token": "token"
+    },
+
+    "node_settings": {
+        "nodetype": "nodetype"
+    },
+
+    "relationship_settings": [
+        {"relationship_label": "rel_label",
+         "relationship_direction": "direction"}
+    ]
 }
+
