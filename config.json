@@ -9,13 +9,16 @@
         "token": "token"
     },
 
-    "node_settings": {
-        "nodetype": "nodetype"
-    },
+    "nodes": [
+    {
+        "type": "Type",
+        "slug": "type",
+        "id": "create",
+        "properties": {
+            "Property": "property"
+        }
+    }],
 
-    "relationship_settings": [
-        {"relationship_label": "rel_label",
-         "relationship_direction": "direction"}
-    ]
+    "relationship_settings": []
 }
 
