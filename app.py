@@ -3,12 +3,13 @@ try:
     import ujson as json
 except ImportError:
     import json  # NOQA
+import tempfile
 import os
 import unicodecsv
 
 from sylvadbclient import API
 
-TEMP_FOLDER = './temp/'
+TEMP_FOLDER = tempfile.gettempdir()
 CONFIG_FILE = 'config.json'
 CREATE = 'create'
 GET_OR_CREATE = 'get_or_create'
@@ -20,6 +21,7 @@ class SylvaApp(object):
         """
         Loading the rules into data structures for an easily treatment
         """
+        print "Loading rules for the graph..."
         # We load the config.json file to set up variables
         with open(CONFIG_FILE) as data_file:
             data = json.load(data_file)
@@ -50,8 +52,10 @@ class SylvaApp(object):
         # Relationships settings
         reltypes = data['relationships']
         self._reltypes = {}
+        self._rel_ids = {}
         for reltype in reltypes:
             type = reltype['slug']
+            id = reltype['id']
             source = reltype['source']
             target = reltype['target']
 
@@ -59,9 +63,11 @@ class SylvaApp(object):
             relationship[source] = 'source'
             relationship[target] = 'target'
             self._reltypes[type] = relationship
+            self._rel_ids[type] = id
 
         # Variables to format the data
         # Properties_index will contain the ids for the columns for each type
+        self._headers = []
         self._properties_index = {}
         # Variable to store the indices to include in the relationships file
         self._relationships_headers = []
@@ -70,6 +76,7 @@ class SylvaApp(object):
         self._nodes = {}
         self._relationships = {}
 
+        print "Connecting with the SylvaDB API..."
         self._api = API(token=self._token, graph_slug=self._graph)
 
     def format_data_columns(self):
@@ -77,6 +84,7 @@ class SylvaApp(object):
         We format the headers of the CSV to get the index to treat for
         each type
         """
+        print "Formatting the CSV columns..."
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
 
@@ -84,6 +92,7 @@ class SylvaApp(object):
         columns = csv_reader.next()
         column_index = 0
         for prop in columns:
+            self._headers.append(prop)
             for key, val in self._nodetypes.iteritems():
                 if prop in val:
                     try:
@@ -99,6 +108,7 @@ class SylvaApp(object):
         """
         We format the nodes data into their respective csv files
         """
+        print "Formatting data for nodes..."
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
         # We read the header, to avoid the columns
@@ -130,7 +140,8 @@ class SylvaApp(object):
             csv_headers_basics = ['id', 'type']
             # Let's get the headers correctly
             csv_headers = []
-            bad_headers = self._nodetypes[key]
+            headers_indexes = self._properties_index[key]
+            bad_headers = [self._headers[i] for i in headers_indexes]
             for header in bad_headers:
                 csv_header = self._nodetypes_mapping[header]
                 csv_headers.append(csv_header)
@@ -153,6 +164,7 @@ class SylvaApp(object):
         """
         Populate the nodes data into SylvaDB
         """
+        print "Dumping the data for nodes into SylvaDB..."
         for key, val in self._nodes_ids.iteritems():
             csv_file_path = os.path.join(TEMP_FOLDER, key + '.csv')
             csv_file = open(csv_file_path, 'r')
@@ -194,6 +206,7 @@ class SylvaApp(object):
             # We need to check if we need to get or create the nodes
             nodes_ids = []
             if val == GET_OR_CREATE:
+                node_index = 0
                 for node in nodes_list:
                     try:
                         property_type = self._rel_properties[nodetype]
@@ -207,8 +220,10 @@ class SylvaApp(object):
                         remote_id = str(results['results'][0]['id'])
                         nodes_ids.append(remote_id)
                     except IndexError:
-                        break
-                nodes_ids = self._api.post_nodes(nodetype, params=nodes)
+                        node_id = self._api.post_nodes(
+                            nodetype, params=[nodes[node_index]])
+                        nodes_ids.extend(node_id)
+                    node_index += 1
             if val == CREATE:
                 nodes_ids = self._api.post_nodes(nodetype, params=nodes)
 
@@ -222,8 +237,10 @@ class SylvaApp(object):
                 except:
                     property_index = 0
                 remote_id = str(nodes_ids[id_index])
+                # self._relationships_index[node_values[property_index]] = (
+                #     remote_id)
                 self._relationships_index[node_values[property_index]] = (
-                    remote_id)
+                    key, remote_id)
                 if nodetype not in self._relationships_headers:
                     self._relationships_headers.append(nodetype)
                 node_values.append(remote_id)
@@ -233,41 +250,69 @@ class SylvaApp(object):
                 id_index += 1
 
     def format_relationships(self):
+        """
+        Create the _relationships.csv files where we map all the relationships
+        neccesary ids.
+        """
+        print "Preparing data for relationships..."
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
         # Headers useless read
         csv_reader.next()
-        results = []
+        columns = []
+        rows = {}
         try:
             temp_data = csv_reader.next()
             while temp_data:
-                row = []
                 for elem in temp_data:
                     try:
-                        remote_id = self._relationships_index[elem]
-                        row.append(remote_id)
+                        reltype = self._relationships_index[elem][0]
+                        remote_id = self._relationships_index[elem][1]
+                        try:
+                            rows[reltype].append(remote_id)
+                        except KeyError:
+                            rows[reltype] = []
+                            rows[reltype].append(remote_id)
                     except KeyError:
                         pass
-                results.append(row)
                 temp_data = csv_reader.next()
         except:
             pass
 
         csv_file_path = os.path.join(TEMP_FOLDER, '_relationships.csv')
         csv_file = open(csv_file_path, 'w')
-        columns = self._relationships_headers
+        columns = rows.keys()
         columns_str = ",".join(columns)
         csv_file.write(columns_str)
         csv_file.write("\n")
 
-        id_index = 0
-        for row in results:
-            node_values = ",".join(row)
-            csv_file.write(node_values)
+        values = rows.values()
+        try:
+            number_rows = len(values[0])
+            number_cols = len(values)
+        except:
+            number_rows = 0
+            number_cols = 0
+
+        row_index = 0
+        while row_index < number_rows:
+            temp_row = []
+            col_index = 0
+            while col_index < number_cols:
+                elem = values[col_index][row_index]
+                temp_row.append(elem)
+                col_index += 1
+            temp_row_str = ",".join(temp_row)
+            csv_file.write(temp_row_str)
             csv_file.write("\n")
-            id_index += 1
+            row_index += 1
 
     def format_data_relationships(self):
+        """
+        Using the _relationships.csv file, we format the data for the
+        relationships
+        """
+        print "Formatting data for relationships..."
         csv_file_path = os.path.join(TEMP_FOLDER, '_relationships.csv')
         csv_file = open(csv_file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
@@ -332,15 +377,49 @@ class SylvaApp(object):
                 row_index += 1
 
     def populate_relationships(self):
-        pass
+        """
+        Populate the relationships data into SylvaDB
+        """
+        print "Dumping the data for relationships into SylvaDB..."
+        for key, val in self._rel_ids.iteritems():
+            csv_file_path = os.path.join(TEMP_FOLDER, key + '.csv')
+            csv_file = open(csv_file_path, 'r')
+            csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
+            columns = csv_reader.next()
+
+            try:
+                relationships = []
+                reltype = key
+                temp_rel_data = csv_reader.next()
+                while temp_rel_data:
+                    # We need to store the data in a dict to post the data
+                    column_index = 0
+                    temp_rel = {}
+                    for elem in temp_rel_data:
+                        temp_rel[columns[column_index]] = elem
+                        column_index += 1
+                    relationships.append(temp_rel)
+                    temp_rel_data = csv_reader.next()
+            except:
+                pass
+
+            # val == GET_OR_CREATE:
+            # TODO: How to get the related relationship by property?
+            # Maybe by source_id and target_id?
+            if val == CREATE:
+                self._api.post_relationships(
+                    reltype, params=relationships)
 
     def populate_data(self):
+        """
+        Execute all the functions
+        """
         # We check if we need to format the data yet
-        # self.format_data_columns()
-        # self.format_data_nodes()
-        # self.populate_nodes()
+        self.format_data_columns()
+        self.format_data_nodes()
+        self.populate_nodes()
 
-        # self.format_relationships()
-        # self.format_data_relationships()
-        # self.populate_relationships()
-        pass
+        self.format_relationships()
+        self.format_data_relationships()
+        self.populate_relationships()
+        print "Execution completed! :)"
