@@ -260,9 +260,11 @@ class SylvaApp(object):
                             property_index = columns.index(property_type)
                         except:
                             property_index = 0
-                        results = self._api.filter_node(
-                            nodetype, property_type, node[property_index])
-                        remote_id = str(results['results'][0]['id'])
+                        results = self._api.filter_nodes(
+                            nodetype,
+                            params={property_type: node[property_index]}
+                        )
+                        remote_id = str(results['nodes'][0]['id'])
                         nodes_ids.append(remote_id)
                     except IndexError:
                         node_id = self._api.post_nodes(
