@@ -3,33 +3,68 @@ try:
     import ujson as json
 except ImportError:
     import json  # NOQA
-import tempfile
 import os
 import unicodecsv
 
+from datetime import datetime
 from sylvadbclient import API
 
-TEMP_FOLDER = tempfile.gettempdir()
+
+# files constant
 CONFIG_FILE = 'config.json'
+LOG_FILE = 'status.log'
+
+# Constants to treat the two modes to work with data
 CREATE = 'create'
 GET_OR_CREATE = 'get_or_create'
 
+# Execution codes
+RULES_LOADING = "RULES_LOADING"
+API_CONNECTING = "API_CONNECTING"
+CSV_COLUMNS_FORMATTING = "CSV_COLUMNS_FORMATTING"
+DATA_NODES_FORMATTING = "DATA_NODES_FORMATTING"
+DATA_NODES_DUMPING = "DATA_NODES_DUMPING"
+RELATIONSHIPS_PREPARING = "RELATIONSHIPS_PREPARING"
+DATA_RELATIONSHIPS_FORMATTING = "DATA_RELATIONSHIPS_FORMATTING"
+DATA_RELATIONSHIPS_DUMPING = "DATA_RELATIONSHIPS_DUMPING"
+EXECUTION_COMPLETED = "EXECUTION_COMPLETED"
+
 
 class SylvaApp(object):
+    def _status(self, code, msg):
+        """
+        Log function
+        """
+        log_file = open(self._log_file_path, 'a+')
+        date_time = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+        log_file.write(code + ': ' + date_time)
+        log_file.write("\n")
+
+        print msg
 
     def __init__(self, file_path):
         """
         Loading the rules into data structures for an easily treatment
         """
-        print "Loading rules for the graph..."
+        self._file_path = file_path
+
+        file_folder, file_name = os.path.split(self._file_path)
+        file_name = file_name.split('.')[0]
+        date_time = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+        self._temp_folder = file_name + '_' + date_time
+        os.makedirs(self._temp_folder)
+
+        # We prepare the log file
+        self._log_file_path = self._temp_folder + '/' + LOG_FILE
+
         # We load the config.json file to set up variables
+        self._status(RULES_LOADING, "Loading rules for the graph...")
         with open(CONFIG_FILE) as data_file:
             data = json.load(data_file)
 
         # Graph and user settings
         self._token = data['graph_settings']['token']
         self._graph = data['graph_settings']['graph']
-        self._file_path = file_path
 
         # Nodes settings
         # Let's extract the types and the affected columns
@@ -76,7 +111,7 @@ class SylvaApp(object):
         self._nodes = {}
         self._relationships = {}
 
-        print "Connecting with the SylvaDB API..."
+        self._status(API_CONNECTING, "Connecting with the SylvaDB API...")
         self._api = API(token=self._token, graph_slug=self._graph)
 
     def format_data_columns(self):
@@ -84,7 +119,7 @@ class SylvaApp(object):
         We format the headers of the CSV to get the index to treat for
         each type
         """
-        print "Formatting the CSV columns..."
+        self._status(CSV_COLUMNS_FORMATTING, "Formatting the CSV columns...")
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
 
@@ -108,7 +143,7 @@ class SylvaApp(object):
         """
         We format the nodes data into their respective csv files
         """
-        print "Formatting data for nodes..."
+        self._status(DATA_NODES_FORMATTING, "Formatting data for nodes...")
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
         # We read the header, to avoid the columns
@@ -134,8 +169,8 @@ class SylvaApp(object):
             pass
         # Once we have our nodes mapped, let's build the temp csv files
         for key, val in self._nodes.iteritems():
-            csv_file_path = os.path.join(TEMP_FOLDER, key + '.csv')
-            csv_file = open(csv_file_path, 'w')
+            csv_file_path = os.path.join(self._temp_folder, key + '.csv')
+            csv_file = open(csv_file_path, 'w+')
 
             csv_headers_basics = ['id', 'type']
             # Let's get the headers correctly
@@ -164,9 +199,10 @@ class SylvaApp(object):
         """
         Populate the nodes data into SylvaDB
         """
-        print "Dumping the data for nodes into SylvaDB..."
+        self._status(DATA_NODES_DUMPING,
+                     "Dumping the data for nodes into SylvaDB...")
         for key, val in self._nodes_ids.iteritems():
-            csv_file_path = os.path.join(TEMP_FOLDER, key + '.csv')
+            csv_file_path = os.path.join(self._temp_folder, key + '.csv')
             csv_file = open(csv_file_path, 'r')
             csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
             columns = csv_reader.next()
@@ -196,8 +232,9 @@ class SylvaApp(object):
                 pass
 
             # We restart the csv files adding the remote id
-            csv_file_path = os.path.join(TEMP_FOLDER, key + '_new_ids.csv')
-            csv_file = open(csv_file_path, 'w')
+            csv_file_path = os.path.join(self._temp_folder,
+                                         key + '_new_ids.csv')
+            csv_file = open(csv_file_path, 'w+')
             columns.append("remote_id")
             columns_str = ",".join(columns)
             csv_file.write(columns_str)
@@ -254,7 +291,8 @@ class SylvaApp(object):
         Create the _relationships.csv files where we map all the relationships
         neccesary ids.
         """
-        print "Preparing data for relationships..."
+        self._status(RELATIONSHIPS_PREPARING,
+                     "Preparing data for relationships...")
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
         # Headers useless read
@@ -279,8 +317,8 @@ class SylvaApp(object):
         except:
             pass
 
-        csv_file_path = os.path.join(TEMP_FOLDER, '_relationships.csv')
-        csv_file = open(csv_file_path, 'w')
+        csv_file_path = os.path.join(self._temp_folder, '_relationships.csv')
+        csv_file = open(csv_file_path, 'w+')
         columns = rows.keys()
         columns_str = ",".join(columns)
         csv_file.write(columns_str)
@@ -312,8 +350,9 @@ class SylvaApp(object):
         Using the _relationships.csv file, we format the data for the
         relationships
         """
-        print "Formatting data for relationships..."
-        csv_file_path = os.path.join(TEMP_FOLDER, '_relationships.csv')
+        self._status(DATA_RELATIONSHIPS_FORMATTING,
+                     "Formatting data for relationships...")
+        csv_file_path = os.path.join(self._temp_folder, '_relationships.csv')
         csv_file = open(csv_file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
 
@@ -345,8 +384,8 @@ class SylvaApp(object):
 
         # We create a dictionary containing the rows
         for key, val in self._reltypes.iteritems():
-            csv_file_path = os.path.join(TEMP_FOLDER, key + '.csv')
-            csv_file = open(csv_file_path, 'w')
+            csv_file_path = os.path.join(self._temp_folder, key + '.csv')
+            csv_file = open(csv_file_path, 'w+')
             columns = ['source_id', 'target_id', 'type']
             columns_str = ",".join(columns)
             csv_file.write(columns_str)
@@ -380,9 +419,10 @@ class SylvaApp(object):
         """
         Populate the relationships data into SylvaDB
         """
-        print "Dumping the data for relationships into SylvaDB..."
+        self._status(DATA_RELATIONSHIPS_DUMPING,
+                     "Dumping the data for relationships into SylvaDB...")
         for key, val in self._rel_ids.iteritems():
-            csv_file_path = os.path.join(TEMP_FOLDER, key + '.csv')
+            csv_file_path = os.path.join(self._temp_folder, key + '.csv')
             csv_file = open(csv_file_path, 'r')
             csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
             columns = csv_reader.next()
@@ -422,4 +462,4 @@ class SylvaApp(object):
         self.format_relationships()
         self.format_data_relationships()
         self.populate_relationships()
-        print "Execution completed! :)"
+        self._status(EXECUTION_COMPLETED, "Execution completed! :)")
