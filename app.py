@@ -27,10 +27,10 @@ GET_OR_CREATE = 'get_or_create'
 
 # Status codes
 _statuses = [
-    "RULES_LOADING", "API_CONNECTING", "CSV_COLUMNS_FORMATTING",
-    "DATA_NODES_FORMATTING", "DATA_NODES_DUMPING", "RELATIONSHIPS_PREPARING",
-    "DATA_RELATIONSHIPS_FORMATTING", "DATA_RELATIONSHIPS_DUMPING",
-    "EXECUTION_COMPLETED", "RESUMING_LOAD",
+    "RULES_LOADING", "API_CONNECTING", "CHECKING_SCHEMA",
+    "CSV_COLUMNS_FORMATTING", "DATA_NODES_FORMATTING", "DATA_NODES_DUMPING",
+    "RELATIONSHIPS_PREPARING", "DATA_RELATIONSHIPS_FORMATTING",
+    "DATA_RELATIONSHIPS_DUMPING", "EXECUTION_COMPLETED", "RESUMING_LOAD",
 ]
 STATUS = namedtuple("Status", _statuses)(**dict([(s, s) for s in _statuses]))
 
@@ -59,6 +59,9 @@ class SylvaApp(object):
         # Settings
         self._token = config['graph_settings']['token']
         self._graph = config['graph_settings']['graph']
+        schema = config['schema']
+
+        self._schema = hashlib.sha1(schema).hexdigest()
         self._nodetypes = {}
         self._rel_properties = {}
         self._nodes_ids = {}
@@ -123,6 +126,20 @@ class SylvaApp(object):
         date_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
+
+    def check_schema(self):
+        """
+        We check the schema to allow the entire execution.
+        """
+        self._status(STATUS.CHECKING_SCHEMA,
+                     "Checking schema...")
+        temp_schema = self._api.export_schema()
+        temp_schema = str(temp_schema)
+        schema_hash = hashlib.sha1(temp_schema).hexdigest()
+
+        if self._schema == schema_hash:
+            return True
+        return False
 
     def format_data_columns(self):
         """
@@ -460,10 +477,16 @@ class SylvaApp(object):
         Execute all the functions
         """
         # We check if we need to format the data yet
-        self.format_data_columns()
-        self.format_data_nodes()
-        self.populate_nodes()
-        self.format_relationships()
-        self.format_data_relationships()
-        self.populate_relationships()
-        self._status(STATUS.EXECUTION_COMPLETED, "Execution completed! :)")
+        schema_correct = self.check_schema()
+        if schema_correct:
+            print("Schema correct! Execution continues...")
+            self.format_data_columns()
+            self.format_data_nodes()
+            self.populate_nodes()
+            self.format_relationships()
+            self.format_data_relationships()
+            self.populate_relationships()
+            self._status(STATUS.EXECUTION_COMPLETED, "Execution completed! :)")
+        else:
+            print("It seems that the schema isn't correct :(")
+            print("Please, check it and restart the execution")
