@@ -59,9 +59,8 @@ class SylvaApp(object):
         # Settings
         self._token = config['graph_settings']['token']
         self._graph = config['graph_settings']['graph']
-        schema = config['schema']
-
-        self._schema = hashlib.sha1(schema).hexdigest()
+        schema_json = json.dumps(config['schema'])
+        self._schema = hashlib.sha1(schema_json).hexdigest()
         self._nodetypes = {}
         self._rel_properties = {}
         self._nodes_ids = {}
@@ -133,10 +132,8 @@ class SylvaApp(object):
         """
         self._status(STATUS.CHECKING_SCHEMA,
                      "Checking schema...")
-        temp_schema = self._api.export_schema()
-        temp_schema = str(temp_schema)
+        temp_schema = json.dumps(self._api.export_schema())
         schema_hash = hashlib.sha1(temp_schema).hexdigest()
-
         if self._schema == schema_hash:
             return True
         return False
