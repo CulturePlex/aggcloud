@@ -27,12 +27,15 @@ GET_OR_CREATE = 'get_or_create'
 
 # Status codes
 _statuses = [
-    "RULES_LOADING", "API_CONNECTING", "CHECKING_SCHEMA",
+    "RULES_LOADING", "API_CONNECTING", "CHECKING_TOKEN", "CHECKING_SCHEMA",
     "CSV_COLUMNS_FORMATTING", "DATA_NODES_FORMATTING", "DATA_NODES_DUMPING",
     "RELATIONSHIPS_PREPARING", "DATA_RELATIONSHIPS_FORMATTING",
     "DATA_RELATIONSHIPS_DUMPING", "EXECUTION_COMPLETED", "RESUMING_LOAD",
 ]
 STATUS = namedtuple("Status", _statuses)(**dict([(s, s) for s in _statuses]))
+
+# Batch size
+BATCH_SIZE = 5
 
 
 class SylvaApp(object):
@@ -73,8 +76,6 @@ class SylvaApp(object):
         self._relationships_headers = []
         self._relationships_index = {}
         # Variables to populate the data
-        self._nodes = {}
-        self._relationships = {}
         self._setup_nodetypes(config)
         self._setup_reltypes(config)
         self._status(STATUS.API_CONNECTING,
@@ -126,6 +127,19 @@ class SylvaApp(object):
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
 
+    def check_token(self):
+        """
+        We check the schema to allow the entire execution.
+        """
+        self._status(STATUS.CHECKING_TOKEN,
+                     "Checking API token...")
+        try:
+            self._api.get_graph()
+        except:
+            raise ValueError(
+                "The API token isn't correct. Please, check it and restart"
+                "the execution.")
+
     def check_schema(self):
         """
         We check the schema to allow the entire execution.
@@ -135,8 +149,11 @@ class SylvaApp(object):
         temp_schema = json.dumps(self._api.export_schema())
         schema_hash = hashlib.sha1(temp_schema).hexdigest()
         if self._schema == schema_hash:
-            return True
-        return False
+            pass
+        else:
+            raise ValueError(
+                "The schema isn't correct. Please, check it and restart"
+                "the execution.")
 
     def format_data_columns(self):
         """
@@ -173,51 +190,65 @@ class SylvaApp(object):
         # We read the header, to avoid the columns
         csv_reader.next()
         # The rest of the lines are data
+        csv_files = {}
+        csv_file_node_id = {}
+        csv_nodes_treated = []
         try:
             temp_data = csv_reader.next()
             while temp_data:
-                # We need to store the data in a dict
                 for key, val in self._properties_index.iteritems():
+                    # Create the node
                     temp_node = []
                     for index in val:
                         temp_value = temp_data[index]
                         temp_node.append(temp_value)
+                    # We check the csv file needed
                     try:
-                        if temp_node not in self._nodes[key]:
-                            self._nodes[key].append(temp_node)
-                    except:
-                        self._nodes[key] = []
-                        self._nodes[key].append(temp_node)
+                        if temp_node not in csv_nodes_treated:
+                            csv_file = csv_files[key]
+                            node_id = csv_file_node_id[key]
+                            csv_file_node_id[key] += 1
+                            csv_nodes_treated.append(temp_node)
+                            # Let's add our node
+                            node_basics = [str(node_id), key]
+                            node_basics.extend(temp_node)
+                            node = ",".join(node_basics)
+                            csv_file.write(node)
+                            csv_file.write("\n")
+                    except KeyError:
+                        csv_file_path = os.path.join(self._history_path,
+                                                     "{}.csv".format(key))
+                        csv_file = open(csv_file_path, 'w+')
+                        csv_files[key] = csv_file
+                        csv_file_node_id[key] = 1
+                        node_id = csv_file_node_id[key]
+                        # Let's get the headers correctly
+                        csv_headers_basics = ['id', 'type']
+                        csv_headers = []
+                        headers_indexes = self._properties_index[key]
+                        bad_headers = [
+                            self._headers[i] for i in headers_indexes]
+                        for header in bad_headers:
+                            csv_header = self._nodetypes_mapping[header]
+                            csv_headers.append(csv_header)
+                        csv_headers_basics.extend(csv_headers)
+                        csv_headers = ",".join(csv_headers_basics)
+                        csv_file.write(csv_headers)
+                        csv_file.write("\n")
+                        csv_nodes_treated.append(temp_node)
+                        # Let's add our node
+                        node_basics = [str(node_id), key]
+                        node_basics.extend(temp_node)
+                        node = ",".join(node_basics)
+                        csv_file.write(node)
+                        csv_file.write("\n")
+                        csv_file_node_id[key] += 1
                 temp_data = csv_reader.next()
-        except:
+        except StopIteration:
             pass
-        # Once we have our nodes mapped, let's build the temp csv files
-        for key, val in self._nodes.iteritems():
-            csv_file_path = os.path.join(self._history_path,
-                                         "{}.csv".format(key))
-            csv_file = open(csv_file_path, 'w+')  # TODO: Use unicodecsv?
-            csv_headers_basics = ['id', 'type']
-            # Let's get the headers correctly
-            csv_headers = []
-            headers_indexes = self._properties_index[key]
-            bad_headers = [self._headers[i] for i in headers_indexes]
-            for header in bad_headers:
-                csv_header = self._nodetypes_mapping[header]
-                csv_headers.append(csv_header)
-            csv_headers_basics.extend(csv_headers)
-            csv_headers = ",".join(csv_headers_basics)
-            csv_file.write(csv_headers)
-            csv_file.write("\n")
-            nodes = self._nodes[key]
-            node_id = 1
-            for node in nodes:
-                node_basics = [str(node_id), key]
-                node_basics.extend(node)
-                node = ",".join(node_basics)
-                csv_file.write(node)
-                csv_file.write("\n")
-                node_id += 1
-            csv_file.close()
+        # Once we have our nodes mapped, let's close our csv files
+        for key in csv_files.keys():
+            csv_files[key].close()
 
     def populate_nodes(self):
         """
@@ -286,7 +317,13 @@ class SylvaApp(object):
                         nodes_ids.extend(node_id)
                     node_index += 1
             if val == CREATE:
-                nodes_ids = self._api.post_nodes(nodetype, params=nodes)
+                nodes_batches = [
+                    nodes[i:i + BATCH_SIZE] for i in range(
+                        0, len(nodes), BATCH_SIZE)]
+                for nodes in nodes_batches:
+                    temp_nodes_ids = (
+                        self._api.post_nodes(nodetype, params=nodes))
+                    nodes_ids.extend(temp_nodes_ids)
             id_index = 0
             for node in nodes_list:
                 node_values = node
@@ -297,8 +334,6 @@ class SylvaApp(object):
                 except:
                     property_index = 0
                 remote_id = str(nodes_ids[id_index])
-                # self._relationships_index[node_values[property_index]] = (
-                #     remote_id)
                 self._relationships_index[node_values[property_index]] = (
                     key, remote_id)
                 if nodetype not in self._relationships_headers:
@@ -377,6 +412,8 @@ class SylvaApp(object):
         csv_file_path = os.path.join(self._history_path, '_relationships.csv')
         csv_file = open(csv_file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
+
+        csv_files = {}
         # First we get the index for each type (they are the headers)
         columns_indexes = {}
         columns = csv_reader.next()
@@ -384,55 +421,53 @@ class SylvaApp(object):
         for prop in columns:
             columns_indexes[prop] = column_index
             column_index = column_index + 1
-        # And next, we get the values to create the relationships
-        relationships_indexes = {}
+
         try:
             temp_data = csv_reader.next()
             while temp_data:
-                # We need to store the data in a dict
-                for key, val in columns_indexes.iteritems():
-                    index = val
-                    temp_value = temp_data[index]
+                for key, val in self._reltypes.iteritems():
                     try:
-                        relationships_indexes[key].append(temp_value)
+                        source = ""
+                        target = ""
+                        type = key
+                        for key_t, val_t in val.iteritems():
+                            data_index = columns_indexes[key_t]
+                            if val_t == 'source':
+                                source = temp_data[data_index]
+                            elif val_t == 'target':
+                                target = temp_data[data_index]
+                        temp_row = [source, target, type]
+                        temp_row_str = ",".join(temp_row)
+                        csv_files[key].write(temp_row_str)
+                        csv_files[key].write("\n")
                     except:
-                        relationships_indexes[key] = []
-                        relationships_indexes[key].append(temp_value)
+                        csv_file_path = os.path.join(self._history_path,
+                                                     "{}.csv".format(key))
+                        csv_file = open(csv_file_path, 'w+')
+                        csv_files[key] = csv_file
+                        columns = ['source_id', 'target_id', 'type']
+                        columns_str = ",".join(columns)
+                        csv_file.write(columns_str)
+                        csv_file.write("\n")
+                        source = ""
+                        target = ""
+                        type = key
+                        for key_t, val_t in val.iteritems():
+                            data_index = columns_indexes[key_t]
+                            if val_t == 'source':
+                                source = temp_data[data_index]
+                            elif val_t == 'target':
+                                target = temp_data[data_index]
+                        temp_row = [source, target, type]
+                        temp_row_str = ",".join(temp_row)
+                        csv_files[key].write(temp_row_str)
+                        csv_files[key].write("\n")
                 temp_data = csv_reader.next()
-        except:
+        except StopIteration:
             pass
-
-        # We create a dictionary containing the rows
-        for key, val in self._reltypes.iteritems():
-            csv_file_path = os.path.join(self._history_path,
-                                         "{}.csv".format(key))
-            csv_file = open(csv_file_path, 'w+')
-            columns = ['source_id', 'target_id', 'type']
-            columns_str = ",".join(columns)
-            csv_file.write(columns_str)
-            csv_file.write("\n")
-            rows = {}
-            for key_t, val_t in val.iteritems():
-                # We get the elements for the type
-                ids = relationships_indexes[key_t]
-                # We get the direction of the type
-                direction = val_t
-                rows[direction] = ids
-            try:
-                number_rows = len(rows.values()[0])
-            except:
-                number_rows = 0
-
-            row_index = 0
-            while row_index < number_rows:
-                source = rows['source'][row_index]
-                target = rows['target'][row_index]
-                type = key
-                temp_row = [source, target, type]
-                temp_row_str = ",".join(temp_row)
-                csv_file.write(temp_row_str)
-                csv_file.write("\n")
-                row_index += 1
+        # Once we have our nodes mapped, let's close our csv files
+        for key in csv_files.keys():
+            csv_files[key].close()
 
     def populate_relationships(self):
         """
@@ -474,9 +509,9 @@ class SylvaApp(object):
         Execute all the functions
         """
         # We check if we need to format the data yet
-        schema_correct = self.check_schema()
-        if schema_correct:
-            print("Schema correct! Execution continues...")
+        try:
+            self.check_token()
+            self.check_schema()
             self.format_data_columns()
             self.format_data_nodes()
             self.populate_nodes()
@@ -484,6 +519,5 @@ class SylvaApp(object):
             self.format_data_relationships()
             self.populate_relationships()
             self._status(STATUS.EXECUTION_COMPLETED, "Execution completed! :)")
-        else:
-            print("It seems that the schema isn't correct :(")
-            print("Please, check it and restart the execution")
+        except ValueError as e:
+            print e.args
