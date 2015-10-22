@@ -7,18 +7,18 @@ try:
 except ImportError:
     import json  # NOQA
 import os
+
 import shutil
 
 import unicodecsv
 
 from sylvadbclient import API
+from rules import *
 
 
 # IO constants
 APP_ROOT = os.path.dirname(__file__)
 HISTORY_PATH = os.path.join(APP_ROOT, "history")
-CONFIG_PATH = os.environ.get("CONFIG_PATH",
-                             os.path.join(APP_ROOT, "config.json"))
 LOG_FILENAME = 'app.log'
 
 # Rules constants
@@ -58,11 +58,10 @@ class SylvaApp(object):
             shutil.copy(file_path, self._file_path)
         # We load the config.json file to set up variables
         self._status(STATUS.RULES_LOADING, "Loading rules for the graph...")
-        config = json.load(open(CONFIG_PATH))
         # Settings
-        self._token = config['graph_settings']['token']
-        self._graph = config['graph_settings']['graph']
-        schema_json = json.dumps(config['schema'])
+        self._token = GRAPH_SETTINGS['token']
+        self._graph = GRAPH_SETTINGS['graph']
+        schema_json = SCHEMA
         self._schema = hashlib.sha1(schema_json).hexdigest()
         self._nodetypes = {}
         self._rel_properties = {}
@@ -76,14 +75,14 @@ class SylvaApp(object):
         self._relationships_headers = []
         self._relationships_index = {}
         # Variables to populate the data
-        self._setup_nodetypes(config)
-        self._setup_reltypes(config)
+        self._setup_nodetypes()
+        self._setup_reltypes()
         self._status(STATUS.API_CONNECTING,
                      "Connecting with the SylvaDB API...")
         self._api = API(token=self._token, graph_slug=self._graph)
 
-    def _setup_nodetypes(self, config):
-        nodetypes = config['nodes']
+    def _setup_nodetypes(self):
+        nodetypes = NODES
         for nodetype in nodetypes:
             type = nodetype['slug']
             id = nodetype['id']
@@ -95,9 +94,9 @@ class SylvaApp(object):
                 self._nodetypes[type].append(val)
                 self._nodetypes_mapping[val] = key
 
-    def _setup_reltypes(self, config):
+    def _setup_reltypes(self):
         # Relationships settings
-        reltypes = config['relationships']
+        reltypes = RELATIONSHIPS
         self._reltypes = {}
         self._rel_ids = {}
         for reltype in reltypes:
@@ -137,8 +136,10 @@ class SylvaApp(object):
             self._api.get_graph()
         except:
             raise ValueError(
-                "The API token isn't correct. Please, check it and restart"
-                "the execution.")
+                "There are problems connecting with the API."
+                "Maybe your token isn't correct. Please, check it and "
+                "restart the execution."
+                "If the problem persists, please contact us :)")
 
     def check_schema(self):
         """
@@ -148,6 +149,7 @@ class SylvaApp(object):
                      "Checking schema...")
         temp_schema = json.dumps(self._api.export_schema())
         schema_hash = hashlib.sha1(temp_schema).hexdigest()
+
         if self._schema == schema_hash:
             pass
         else:
