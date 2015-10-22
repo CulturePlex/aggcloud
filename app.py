@@ -206,17 +206,7 @@ class SylvaApp(object):
                         temp_node.append(temp_value)
                     # We check the csv file needed
                     try:
-                        if temp_node not in csv_nodes_treated:
-                            csv_file = csv_files[key]
-                            node_id = csv_file_node_id[key]
-                            csv_file_node_id[key] += 1
-                            csv_nodes_treated.append(temp_node)
-                            # Let's add our node
-                            node_basics = [str(node_id), key]
-                            node_basics.extend(temp_node)
-                            node = ",".join(node_basics)
-                            csv_file.write(node)
-                            csv_file.write("\n")
+                        csv_file = csv_files[key]
                     except KeyError:
                         csv_file_path = os.path.join(self._history_path,
                                                      "{}.csv".format(key))
@@ -237,13 +227,14 @@ class SylvaApp(object):
                         csv_headers = ",".join(csv_headers_basics)
                         csv_file.write(csv_headers)
                         csv_file.write("\n")
-                        csv_nodes_treated.append(temp_node)
-                        # Let's add our node
+                    # Let's add our node
+                    if temp_node not in csv_nodes_treated:
                         node_basics = [str(node_id), key]
                         node_basics.extend(temp_node)
                         node = ",".join(node_basics)
                         csv_file.write(node)
                         csv_file.write("\n")
+                        csv_nodes_treated.append(temp_node)
                         csv_file_node_id[key] += 1
                 temp_data = csv_reader.next()
         except StopIteration:
@@ -346,7 +337,7 @@ class SylvaApp(object):
                 csv_file.write("\n")
                 id_index += 1
 
-    def format_relationships(self):
+    def preparing_relationships(self):
         """
         Create the _relationships.csv files where we map all the relationships
         neccesary ids.
@@ -429,19 +420,7 @@ class SylvaApp(object):
             while temp_data:
                 for key, val in self._reltypes.iteritems():
                     try:
-                        source = ""
-                        target = ""
-                        type = key
-                        for key_t, val_t in val.iteritems():
-                            data_index = columns_indexes[key_t]
-                            if val_t == 'source':
-                                source = temp_data[data_index]
-                            elif val_t == 'target':
-                                target = temp_data[data_index]
-                        temp_row = [source, target, type]
-                        temp_row_str = ",".join(temp_row)
-                        csv_files[key].write(temp_row_str)
-                        csv_files[key].write("\n")
+                        csv_file = csv_files[key]
                     except:
                         csv_file_path = os.path.join(self._history_path,
                                                      "{}.csv".format(key))
@@ -451,19 +430,19 @@ class SylvaApp(object):
                         columns_str = ",".join(columns)
                         csv_file.write(columns_str)
                         csv_file.write("\n")
-                        source = ""
-                        target = ""
-                        type = key
-                        for key_t, val_t in val.iteritems():
-                            data_index = columns_indexes[key_t]
-                            if val_t == 'source':
-                                source = temp_data[data_index]
-                            elif val_t == 'target':
-                                target = temp_data[data_index]
-                        temp_row = [source, target, type]
-                        temp_row_str = ",".join(temp_row)
-                        csv_files[key].write(temp_row_str)
-                        csv_files[key].write("\n")
+                    source = ""
+                    target = ""
+                    type = key
+                    for key_t, val_t in val.iteritems():
+                        data_index = columns_indexes[key_t]
+                        if val_t == 'source':
+                            source = temp_data[data_index]
+                        elif val_t == 'target':
+                            target = temp_data[data_index]
+                    temp_row = [source, target, type]
+                    temp_row_str = ",".join(temp_row)
+                    csv_files[key].write(temp_row_str)
+                    csv_files[key].write("\n")
                 temp_data = csv_reader.next()
         except StopIteration:
             pass
@@ -500,11 +479,16 @@ class SylvaApp(object):
             except:
                 pass
             # val == GET_OR_CREATE:
+            #   pass
             # TODO: How to get the related relationship by property?
             # Maybe by source_id and target_id?
             if val == CREATE:
-                self._api.post_relationships(
-                    reltype, params=relationships)
+                rels_batches = [
+                    relationships[i:i + BATCH_SIZE] for i in range(
+                        0, len(relationships), BATCH_SIZE)]
+                for relationships in rels_batches:
+                        self._api.post_relationships(
+                            reltype, params=relationships)
 
     def populate_data(self):
         """
@@ -517,7 +501,7 @@ class SylvaApp(object):
             self.format_data_columns()
             self.format_data_nodes()
             self.populate_nodes()
-            self.format_relationships()
+            self.preparing_relationships()
             self.format_data_relationships()
             self.populate_relationships()
             self._status(STATUS.EXECUTION_COMPLETED, "Execution completed! :)")
