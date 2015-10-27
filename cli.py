@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
+from app import SylvaApp
+import imp
+from gooey import Gooey, GooeyParser
 try:
     import ujson as json
 except ImportError:
     import json  # NOQA
+import os
 
-from app import SylvaApp
-from gooey import Gooey, GooeyParser
-from rules import *
+APP_ROOT = os.path.dirname(__file__)
+RULES_PATH = os.environ.get("RULES_PATH",
+                            os.path.join(APP_ROOT, "rules.py"))
+rules = imp.load_source('rules', RULES_PATH)
 
 running = True
 
@@ -14,8 +19,8 @@ running = True
 @Gooey(dump_build_config=True,
        program_name="SylvaDB - client")
 def main():
-    settings_msg = CONFIG_SETTINGS['settings_msg']
-    file_help_msg = CONFIG_SETTINGS['file_help_msg']
+    settings_msg = rules.CONFIG_SETTINGS['settings_msg']
+    file_help_msg = rules.CONFIG_SETTINGS['file_help_msg']
 
     parser = GooeyParser(description=settings_msg)
     parser.add_argument("FileChooser", help=file_help_msg,

@@ -2,23 +2,25 @@
 from collections import namedtuple
 from datetime import datetime
 import hashlib
+import imp
 try:
     import ujson as json
 except ImportError:
     import json  # NOQA
 import os
-
 import shutil
-
 import unicodecsv
 
 from sylvadbclient import API
-from rules import *
 
 
 # IO constants
 APP_ROOT = os.path.dirname(__file__)
 HISTORY_PATH = os.path.join(APP_ROOT, "history")
+
+RULES_PATH = os.environ.get("RULES_PATH",
+                            os.path.join(APP_ROOT, "rules.py"))
+rules = imp.load_source('rules', RULES_PATH)
 LOG_FILENAME = 'app.log'
 
 # Rules constants
@@ -59,9 +61,9 @@ class SylvaApp(object):
         # We load the config.json file to set up variables
         self._status(STATUS.RULES_LOADING, "Loading rules for the graph...")
         # Settings
-        self._token = GRAPH_SETTINGS['token']
-        self._graph = GRAPH_SETTINGS['graph']
-        schema_json = SCHEMA
+        self._token = rules.GRAPH_SETTINGS['token']
+        self._graph = rules.GRAPH_SETTINGS['graph']
+        schema_json = rules.SCHEMA
         self._schema = hashlib.sha1(schema_json).hexdigest()
         self._nodetypes = {}
         self._rel_properties = {}
@@ -82,7 +84,7 @@ class SylvaApp(object):
         self._api = API(token=self._token, graph_slug=self._graph)
 
     def _setup_nodetypes(self):
-        nodetypes = NODES
+        nodetypes = rules.NODES
         for nodetype in nodetypes:
             type = nodetype['slug']
             id = nodetype['id']
@@ -96,7 +98,7 @@ class SylvaApp(object):
 
     def _setup_reltypes(self):
         # Relationships settings
-        reltypes = RELATIONSHIPS
+        reltypes = rules.RELATIONSHIPS
         self._reltypes = {}
         self._rel_ids = {}
         for reltype in reltypes:
