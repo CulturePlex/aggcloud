@@ -9,12 +9,12 @@ def string_to_list_or_tuple(string_input):
     return string_input
 
 
-def join_coordinates(coordinates, args):
-    if len(args) > 0:
-        coordinates = [coordinates]
-        for coordinate in args:
-            coordinate = string_to_list_or_tuple(coordinate)
-            coordinates.append(coordinate)
+def join_coordinates(coordinates):
+    if len(coordinates) > 1:
+        coordinates = [string_to_list_or_tuple(coordinate)
+                       for coordinate in coordinates]
+    else:
+        coordinates = string_to_list_or_tuple(coordinates[0])
     return coordinates
 
 
@@ -50,7 +50,7 @@ def point(latitude, longitude=None):
     return geojson.dumps(geojson_point)
 
 
-def path(coordinates, *args):
+def path(*coordinates):
     """
     coordinates examples:
         "[[-105, 40], [-110, 45], [-115, 55]]"
@@ -65,14 +65,13 @@ def path(coordinates, *args):
         "(-105, 40)", "(-110, 45)", "(-115, 55)"
         "[-105, 40]", "[-110, 45]", "[-115, 55]"
     """
-    coordinates = string_to_list_or_tuple(coordinates)
-    coordinates = join_coordinates(coordinates, args)
+    coordinates = join_coordinates(coordinates)
     geojson_path = geojson.LineString(coordinates)
     check_geojson_validity(geojson_path)
     return geojson.dumps(geojson_path)
 
 
-def area(coordinates, *args):
+def area(*coordinates):
     """
     coordinates examples:
         "[[[-105, 40], [-110, 45], [-115, 55], [-105, 40]]]"
@@ -92,12 +91,7 @@ def area(coordinates, *args):
         "(-105, 40)", "(-110, 45)", "(-115, 55)", "(-105, 40)"
         "[-105, 40]", "[-110, 45]", "[-115, 55]", "[-105, 40]"
     """
-    coordinates = string_to_list_or_tuple(coordinates)
-    if len(args) > 0:
-        coordinates = [coordinates]
-        for coordinate in args:
-            coordinate = string_to_list_or_tuple(coordinate)
-            coordinates.append(coordinate)
+    coordinates = join_coordinates(coordinates)
     # The right GeoJSON format for Polygons is a 3 dimensional list:
     if not isinstance(coordinates[0][0], (list, tuple)):
         coordinates = [coordinates]
