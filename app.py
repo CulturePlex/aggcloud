@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from collections import namedtuple
 from datetime import datetime
+import castings
 import hashlib
 import imp
 try:
@@ -69,6 +70,8 @@ class SylvaApp(object):
         self._rel_properties = {}
         self._nodes_ids = {}
         self._nodetypes_mapping = {}
+        self._nodetypes_casting_elements = {}
+        self._headers_indexes = {}
         # Variables to format the data
         # Properties_index will contain the ids for the columns for each type
         self._headers = []
@@ -93,8 +96,31 @@ class SylvaApp(object):
             self._rel_properties[type] = rel_property
             self._nodetypes[type] = []
             for key, val in nodetype['properties'].iteritems():
-                self._nodetypes[type].append(val)
-                self._nodetypes_mapping[val] = key
+                # We check if we have a casting function defined
+                if isinstance(val, (tuple, list)):
+                    func = val[0]
+                    params = val[1:]
+                    for param in params:
+                        self._nodetypes[type].append(param)
+                        try:
+                            casting_elem = {}
+                            casting_elem[func] = params
+                            if(casting_elem not in
+                               self._nodetypes_casting_elements[type]):
+                                    (self._nodetypes_casting_elements[type]
+                                        .append(casting_elem))
+                        except:
+                            self._nodetypes_casting_elements[type] = []
+                            casting_elem = {}
+                            casting_elem[func] = params
+                            if(casting_elem not in
+                               self._nodetypes_casting_elements[type]):
+                                    (self._nodetypes_casting_elements[type]
+                                        .append(casting_elem))
+                        self._nodetypes_mapping[param] = param
+                else:
+                    self._nodetypes[type].append(val)
+                    self._nodetypes_mapping[val] = key
 
     def _setup_reltypes(self):
         # Relationships settings
@@ -229,6 +255,7 @@ class SylvaApp(object):
                     except:
                         self._properties_index[key] = []
                         self._properties_index[key].append(column_index)
+            self._headers_indexes[prop] = column_index
             column_index += 1
 
     def format_data_nodes(self):
@@ -254,6 +281,25 @@ class SylvaApp(object):
                     for index in val:
                         temp_value = temp_data[index]
                         temp_node.append(temp_value)
+                    # Check if we have casting function
+                    try:
+                        casting_functions = (
+                            self._nodetypes_casting_elements[key])
+                    except KeyError:
+                        casting_functions = []
+                    csv_headers_castings = []
+                    for casting_function in casting_functions:
+                        for func, params in casting_function.iteritems():
+                            # Let's get the index to get the values for params
+                            params_values = []
+                            for param in params:
+                                param_index = self._headers_indexes[param]
+                                param_value = temp_data[param_index]
+                                params_values.append(param_value)
+                            cast_func = getattr(castings, func)
+                            csv_header, result = cast_func(*params_values)
+                            csv_headers_castings.append(csv_header)
+                            temp_node.append(result)
                     # We check the csv file needed
                     try:
                         csv_file = csv_files[key]
@@ -274,6 +320,7 @@ class SylvaApp(object):
                             csv_header = self._nodetypes_mapping[header]
                             csv_headers.append(csv_header)
                         csv_headers_basics.extend(csv_headers)
+                        csv_headers_basics.extend(csv_headers_castings)
                         csv_headers = ",".join(csv_headers_basics)
                         csv_file.write(csv_headers)
                         csv_file.write("\n")
