@@ -95,6 +95,10 @@ def area(*coordinates):
     # The right GeoJSON format for Polygons is a 3 dimensional list:
     if not isinstance(coordinates[0][0], (list, tuple)):
         coordinates = [coordinates]
+    # The last coordinate of a polygon must be the same that the first:
+    for polygon in coordinates:
+        if polygon[0] != polygon[-1]:
+            polygon.append(polygon[0])
     geojson_area = geojson.Polygon(coordinates)
     check_geojson_validity(geojson_area)
     return geojson.dumps(geojson_area)
