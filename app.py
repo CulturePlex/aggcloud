@@ -37,7 +37,7 @@ _statuses = [
 STATUS = namedtuple("Status", _statuses)(**dict([(s, s) for s in _statuses]))
 
 # Batch size
-BATCH_SIZE = 5
+BATCH_SIZE = 3
 
 
 class SylvaApp(object):
@@ -127,6 +127,54 @@ class SylvaApp(object):
         date_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
+
+    def _dump_nodes(self, csv_file, type, mode, nodetype, columns, nodes,
+                    nodes_list):
+        nodes_ids = []
+        if mode == GET_OR_CREATE:
+            node_index = 0
+            for node in nodes_list:
+                try:
+                    property_type = self._rel_properties[nodetype]
+                    # Let's get the value for the property
+                    try:
+                        property_index = columns.index(property_type)
+                    except:
+                        property_index = 0
+                    results = self._api.filter_nodes(
+                        nodetype,
+                        params={property_type: node[property_index]}
+                    )
+                    remote_id = str(results['nodes'][0]['id'])
+                    nodes_ids.append(remote_id)
+                except IndexError:
+                    node_id = self._api.post_nodes(
+                        nodetype, params=[nodes[node_index]])
+                    nodes_ids.extend(node_id)
+                node_index += 1
+        if mode == CREATE:
+            temp_nodes_ids = (
+                self._api.post_nodes(nodetype, params=nodes))
+            nodes_ids.extend(temp_nodes_ids)
+        id_index = 0
+        for node in nodes_list:
+            node_values = node
+            property_type = self._rel_properties[nodetype]
+            # Let's get the value for the property
+            try:
+                property_index = columns.index(property_type)
+            except:
+                property_index = 0
+            remote_id = str(nodes_ids[id_index])
+            self._relationships_index[node_values[property_index]] = (
+                type, remote_id)
+            if nodetype not in self._relationships_headers:
+                self._relationships_headers.append(nodetype)
+            node_values.append(remote_id)
+            node_values = ",".join(node_values)
+            csv_file.write(node_values)
+            csv_file.write("\n")
+            id_index += 1
 
     def check_token(self):
         """
@@ -252,20 +300,28 @@ class SylvaApp(object):
         self._status(STATUS.DATA_NODES_DUMPING,
                      "Dumping the data for nodes into SylvaDB...")
         for key, val in self._nodes_ids.iteritems():
-            csv_file_path = os.path.join(self._history_path,
-                                         "{}.csv".format(key))
-            csv_file = open(csv_file_path, 'r')
-            csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
-            columns = csv_reader.next()
+            # We open the files to read and write
+            csv_file_path_root = os.path.join(self._history_path,
+                                              "{}.csv".format(key))
+            csv_file_path_new = os.path.join(self._history_path,
+                                             "{}_new_ids.csv".format(key))
+            csv_file_root = open(csv_file_path_root, 'r')
+            csv_file_new = open(csv_file_path_new, 'w+')
+            csv_reader_root = unicodecsv.reader(csv_file_root,
+                                                encoding="utf-8")
+            columns = csv_reader_root.next()
+            columns.append("remote_id")
+            columns_str = ",".join(columns)
+            csv_file_new.write(columns_str)
+            csv_file_new.write("\n")
             try:
                 # We are going to save the nodes in a list of dicts
                 # to store the data
                 nodes = []
-                # And in a list of lists, to dump the data in the csv
-                # TODO - PROBLEM WITH ORDER
+                nodes_batch_limit = 0
                 nodes_list = []
                 nodetype = key
-                temp_node_data = csv_reader.next()
+                temp_node_data = csv_reader_root.next()
                 while temp_node_data:
                     # We need to store the data in a dict to post the data
                     column_index = 0
@@ -277,67 +333,20 @@ class SylvaApp(object):
                         column_index += 1
                     nodes.append(temp_node)
                     nodes_list.append(temp_node_list)
-                    temp_node_data = csv_reader.next()
-            except:
-                pass
-            # We restart the csv files adding the remote id
-            csv_file_path = os.path.join(self._history_path,
-                                         "{}_new_ids.csv".format(key))
-            csv_file = open(csv_file_path, 'w+')
-            columns.append("remote_id")
-            columns_str = ",".join(columns)
-            csv_file.write(columns_str)
-            csv_file.write("\n")
-            # We need to check if we need to get or create the nodes
-            nodes_ids = []
-            if val == GET_OR_CREATE:
-                node_index = 0
-                for node in nodes_list:
-                    try:
-                        property_type = self._rel_properties[nodetype]
-                        # Let's get the value for the property
-                        try:
-                            property_index = columns.index(property_type)
-                        except:
-                            property_index = 0
-                        results = self._api.filter_nodes(
-                            nodetype,
-                            params={property_type: node[property_index]}
-                        )
-                        remote_id = str(results['nodes'][0]['id'])
-                        nodes_ids.append(remote_id)
-                    except IndexError:
-                        node_id = self._api.post_nodes(
-                            nodetype, params=[nodes[node_index]])
-                        nodes_ids.extend(node_id)
-                    node_index += 1
-            if val == CREATE:
-                nodes_batches = [
-                    nodes[i:i + BATCH_SIZE] for i in range(
-                        0, len(nodes), BATCH_SIZE)]
-                for nodes in nodes_batches:
-                    temp_nodes_ids = (
-                        self._api.post_nodes(nodetype, params=nodes))
-                    nodes_ids.extend(temp_nodes_ids)
-            id_index = 0
-            for node in nodes_list:
-                node_values = node
-                property_type = self._rel_properties[nodetype]
-                # Let's get the value for the property
-                try:
-                    property_index = columns.index(property_type)
-                except:
-                    property_index = 0
-                remote_id = str(nodes_ids[id_index])
-                self._relationships_index[node_values[property_index]] = (
-                    key, remote_id)
-                if nodetype not in self._relationships_headers:
-                    self._relationships_headers.append(nodetype)
-                node_values.append(remote_id)
-                node_values = ",".join(node_values)
-                csv_file.write(node_values)
-                csv_file.write("\n")
-                id_index += 1
+                    nodes_batch_limit += 1
+                    if nodes_batch_limit == BATCH_SIZE:
+                        print("Dumping {} nodes...".format(len(nodes_list)))
+                        self._dump_nodes(csv_file_new, key, val,
+                                         nodetype, columns, nodes, nodes_list)
+                        # We reset the structures
+                        nodes = []
+                        nodes_batch_limit = 0
+                        nodes_list = []
+                    temp_node_data = csv_reader_root.next()
+            except StopIteration:
+                print("Dumping {} nodes...".format(len(nodes_list)))
+                self._dump_nodes(csv_file_new, key, val, nodetype, columns,
+                                 nodes, nodes_list)
 
     def preparing_relationships(self):
         """
@@ -467,6 +476,7 @@ class SylvaApp(object):
 
             try:
                 relationships = []
+                relationships_batch_limit = 0
                 reltype = key
                 temp_rel_data = csv_reader.next()
                 while temp_rel_data:
@@ -477,20 +487,22 @@ class SylvaApp(object):
                         temp_rel[columns[column_index]] = elem
                         column_index += 1
                     relationships.append(temp_rel)
+                    relationships_batch_limit += 1
+                    if relationships_batch_limit == BATCH_SIZE:
+                        print("Dumping {} relationships...".format(
+                            len(relationships)))
+                        if val == CREATE:
+                            self._api.post_relationships(reltype,
+                                                         params=relationships)
+                        # We reset the structures
+                        relationships = []
+                        relationships_batch_limit = 0
                     temp_rel_data = csv_reader.next()
-            except:
-                pass
-            # val == GET_OR_CREATE:
-            #   pass
-            # TODO: How to get the related relationship by property?
-            # Maybe by source_id and target_id?
-            if val == CREATE:
-                rels_batches = [
-                    relationships[i:i + BATCH_SIZE] for i in range(
-                        0, len(relationships), BATCH_SIZE)]
-                for relationships in rels_batches:
-                        self._api.post_relationships(
-                            reltype, params=relationships)
+            except StopIteration:
+                print("Dumping {} relationships...".format(len(relationships)))
+                if val == CREATE:
+                    self._api.post_relationships(reltype,
+                                                 params=relationships)
 
     def populate_data(self):
         """
