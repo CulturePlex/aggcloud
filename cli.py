@@ -73,6 +73,7 @@ class SylvaApp(object):
         self._nodetypes_mapping = {}
         self._nodetypes_casting_elements = {}
         self._headers_indexes = {}
+        self._nodetypes_casting_types = {}
         # Variables to format the data
         # Properties_index will contain the ids for the columns for each type
         self._headers = []
@@ -101,6 +102,7 @@ class SylvaApp(object):
                 if isinstance(val, (tuple, list)):
                     func = val[0]
                     params = val[1:]
+                    self._nodetypes_casting_types[func] = key
                     for param in params:
                         self._nodetypes[type].append(param)
                         try:
@@ -118,7 +120,6 @@ class SylvaApp(object):
                                self._nodetypes_casting_elements[type]):
                                     (self._nodetypes_casting_elements[type]
                                         .append(casting_elem))
-                        self._nodetypes_mapping[param] = param
                 else:
                     self._nodetypes[type].append(val)
                     self._nodetypes_mapping[val] = key
@@ -155,7 +156,7 @@ class SylvaApp(object):
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
 
-    def _dump_nodes(self, csv_file, type, mode, nodetype, columns, nodes,
+    def _dump_nodes(self, csv_writer, type, mode, nodetype, columns, nodes,
                     nodes_list):
         nodes_ids = []
         if mode == GET_OR_CREATE:
@@ -198,9 +199,7 @@ class SylvaApp(object):
             if nodetype not in self._relationships_headers:
                 self._relationships_headers.append(nodetype)
             node_values.append(remote_id)
-            node_values = ",".join(node_values)
-            csv_file.write(node_values)
-            csv_file.write("\n")
+            csv_writer.writerow(node_values)
             id_index += 1
 
     def check_token(self):
@@ -258,6 +257,7 @@ class SylvaApp(object):
                         self._properties_index[key].append(column_index)
             self._headers_indexes[prop] = column_index
             column_index += 1
+        csv_file.close()
 
     def format_data_nodes(self):
         """
@@ -265,12 +265,13 @@ class SylvaApp(object):
         """
         self._status(STATUS.DATA_NODES_FORMATTING,
                      "Formatting data for nodes...")
-        csv_file = open(self._file_path, 'r')
-        csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
+        csv_file_root = open(self._file_path, 'r')
+        csv_reader = unicodecsv.reader(csv_file_root, encoding="utf-8")
         # We read the header, to avoid the columns
         csv_reader.next()
         # The rest of the lines are data
         csv_files = {}
+        csv_writers = {}
         csv_file_node_id = {}
         csv_nodes_treated = []
         try:
@@ -298,17 +299,21 @@ class SylvaApp(object):
                                 param_value = temp_data[param_index]
                                 params_values.append(param_value)
                             cast_func = getattr(castings, func)
-                            csv_header, result = cast_func(*params_values)
+                            csv_header = self._nodetypes_casting_types[func]
+                            result = cast_func(*params_values)
                             csv_headers_castings.append(csv_header)
                             temp_node.append(result)
                     # We check the csv file needed
                     try:
-                        csv_file = csv_files[key]
+                        csv_writer = csv_writers[key]
                     except KeyError:
                         csv_file_path = os.path.join(self._history_path,
                                                      "{}.csv".format(key))
                         csv_file = open(csv_file_path, 'w+')
+                        csv_writer = unicodecsv.writer(csv_file,
+                                                       encoding="utf-8")
                         csv_files[key] = csv_file
+                        csv_writers[key] = csv_writer
                         csv_file_node_id[key] = 1
                         node_id = csv_file_node_id[key]
                         # Let's get the headers correctly
@@ -322,24 +327,21 @@ class SylvaApp(object):
                             csv_headers.append(csv_header)
                         csv_headers_basics.extend(csv_headers)
                         csv_headers_basics.extend(csv_headers_castings)
-                        csv_headers = ",".join(csv_headers_basics)
-                        csv_file.write(csv_headers)
-                        csv_file.write("\n")
+                        csv_writer.writerow(csv_headers_basics)
                     # Let's add our node
                     if temp_node not in csv_nodes_treated:
                         node_basics = [str(node_id), key]
                         node_basics.extend(temp_node)
-                        node = ",".join(node_basics)
-                        csv_file.write(node)
-                        csv_file.write("\n")
+                        csv_writer.writerow(node_basics)
                         csv_nodes_treated.append(temp_node)
                         csv_file_node_id[key] += 1
                 temp_data = csv_reader.next()
         except StopIteration:
             pass
-        # Once we have our nodes mapped, let's close our csv files
-        for key in csv_files.keys():
-            csv_files[key].close()
+        # We close the files
+        csv_file_root.close()
+        for f in csv_files.values():
+            f.close()
 
     def populate_nodes(self):
         """
@@ -357,11 +359,10 @@ class SylvaApp(object):
             csv_file_new = open(csv_file_path_new, 'w+')
             csv_reader_root = unicodecsv.reader(csv_file_root,
                                                 encoding="utf-8")
+            csv_writer = unicodecsv.writer(csv_file_new, encoding="utf-8")
             columns = csv_reader_root.next()
             columns.append("remote_id")
-            columns_str = ",".join(columns)
-            csv_file_new.write(columns_str)
-            csv_file_new.write("\n")
+            csv_writer.writerow(columns)
             try:
                 # We are going to save the nodes in a list of dicts
                 # to store the data
@@ -384,7 +385,7 @@ class SylvaApp(object):
                     nodes_batch_limit += 1
                     if nodes_batch_limit == BATCH_SIZE:
                         print("Dumping {} nodes...".format(len(nodes_list)))
-                        self._dump_nodes(csv_file_new, key, val,
+                        self._dump_nodes(csv_writer, key, val,
                                          nodetype, columns, nodes, nodes_list)
                         # We reset the structures
                         nodes = []
@@ -393,8 +394,10 @@ class SylvaApp(object):
                     temp_node_data = csv_reader_root.next()
             except StopIteration:
                 print("Dumping {} nodes...".format(len(nodes_list)))
-                self._dump_nodes(csv_file_new, key, val, nodetype, columns,
+                self._dump_nodes(csv_writer, key, val, nodetype, columns,
                                  nodes, nodes_list)
+            csv_file_root.close()
+            csv_file_new.close()
 
     def preparing_relationships(self):
         """
@@ -405,7 +408,7 @@ class SylvaApp(object):
                      "Preparing data for relationships...")
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
-        # Headers useless read
+        # Avoid headers
         csv_reader.next()
         columns = []
         rows = {}
@@ -426,13 +429,13 @@ class SylvaApp(object):
                 temp_data = csv_reader.next()
         except:
             pass
+        csv_file.close()
 
         csv_file_path = os.path.join(self._history_path, '_relationships.csv')
         csv_file = open(csv_file_path, 'w+')
+        csv_writer = unicodecsv.writer(csv_file, encoding="utf-8")
         columns = rows.keys()
-        columns_str = ",".join(columns)
-        csv_file.write(columns_str)
-        csv_file.write("\n")
+        csv_writer.writerow(columns)
         values = rows.values()
         try:
             number_rows = len(values[0])
@@ -449,10 +452,9 @@ class SylvaApp(object):
                 elem = values[col_index][row_index]
                 temp_row.append(elem)
                 col_index += 1
-            temp_row_str = ",".join(temp_row)
-            csv_file.write(temp_row_str)
-            csv_file.write("\n")
+            csv_writer.writerow(temp_row)
             row_index += 1
+        csv_file.close()
 
     def format_data_relationships(self):
         """
@@ -462,10 +464,11 @@ class SylvaApp(object):
         self._status(STATUS.DATA_RELATIONSHIPS_FORMATTING,
                      "Formatting data for relationships...")
         csv_file_path = os.path.join(self._history_path, '_relationships.csv')
-        csv_file = open(csv_file_path, 'r')
-        csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
+        csv_file_root = open(csv_file_path, 'r')
+        csv_reader = unicodecsv.reader(csv_file_root, encoding="utf-8")
 
         csv_files = {}
+        csv_writers = {}
         # First we get the index for each type (they are the headers)
         columns_indexes = {}
         columns = csv_reader.next()
@@ -479,16 +482,17 @@ class SylvaApp(object):
             while temp_data:
                 for key, val in self._reltypes.iteritems():
                     try:
-                        csv_file = csv_files[key]
+                        csv_writer = csv_writers[key]
                     except:
                         csv_file_path = os.path.join(self._history_path,
                                                      "{}.csv".format(key))
                         csv_file = open(csv_file_path, 'w+')
+                        csv_writer = unicodecsv.writer(csv_file,
+                                                       encoding="utf-8")
                         csv_files[key] = csv_file
+                        csv_writers[key] = csv_writer
                         columns = ['source_id', 'target_id', 'type']
-                        columns_str = ",".join(columns)
-                        csv_file.write(columns_str)
-                        csv_file.write("\n")
+                        csv_writer.writerow(columns)
                     source = ""
                     target = ""
                     type = key
@@ -499,15 +503,13 @@ class SylvaApp(object):
                         elif val_t == 'target':
                             target = temp_data[data_index]
                     temp_row = [source, target, type]
-                    temp_row_str = ",".join(temp_row)
-                    csv_files[key].write(temp_row_str)
-                    csv_files[key].write("\n")
+                    csv_writers[key].writerow(temp_row)
                 temp_data = csv_reader.next()
         except StopIteration:
             pass
-        # Once we have our nodes mapped, let's close our csv files
-        for key in csv_files.keys():
-            csv_files[key].close()
+        csv_file_root.close()
+        for f in csv_files.values():
+            f.close()
 
     def populate_relationships(self):
         """
