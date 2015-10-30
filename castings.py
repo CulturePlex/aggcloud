@@ -102,3 +102,11 @@ def area(*coordinates):
     geojson_area = geojson.Polygon(coordinates)
     check_geojson_validity(geojson_area)
     return geojson.dumps(geojson_area)
+
+
+def combine_lon_lat(*params):
+    """
+    Simple example creating coordinates using params
+    """
+    coordinates = "_".join(params)
+    return ("Coordinates", coordinates)
