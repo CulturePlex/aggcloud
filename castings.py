@@ -110,3 +110,14 @@ def combine_lon_lat(*params):
     """
     coordinates = "_".join(params)
     return ("Coordinates", coordinates)
+
+
+def number(value):
+    for func in [int, float, long]:
+        try:
+            return func(value)
+        except ValueError:
+            pass
+        else:
+            break
+    return value
