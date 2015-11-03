@@ -39,7 +39,7 @@ _statuses = [
 STATUS = namedtuple("Status", _statuses)(**dict([(s, s) for s in _statuses]))
 
 # Batch size
-BATCH_SIZE = 3
+BATCH_SIZE = 500
 
 
 class SylvaApp(object):
@@ -65,8 +65,7 @@ class SylvaApp(object):
         # Settings
         self._token = rules.GRAPH_SETTINGS['token']
         self._graph = rules.GRAPH_SETTINGS['graph']
-        schema_json = rules.SCHEMA
-        self._schema = hashlib.sha1(schema_json).hexdigest()
+        self._schema = json.loads(rules.SCHEMA)
         self._nodetypes = {}
         self._rel_properties = {}
         self._nodes_ids = {}
@@ -223,10 +222,9 @@ class SylvaApp(object):
         """
         self._status(STATUS.CHECKING_SCHEMA,
                      "Checking schema...")
-        temp_schema = json.dumps(self._api.export_schema())
-        schema_hash = hashlib.sha1(temp_schema).hexdigest()
-
-        if self._schema == schema_hash:
+        api_schema_hash = self._api.export_schema()
+        app_schema_hash = self._schema
+        if api_schema_hash == app_schema_hash:
             pass
         else:
             raise ValueError(
