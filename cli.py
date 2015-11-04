@@ -44,11 +44,14 @@ BATCH_SIZE = 500
 
 class SylvaApp(object):
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, batch_size=None):
         """
         Loading the rules into data structures for an easily treatment
         """
         print("Hashing contents of CSV file...")  # This doesn't to to status
+        self.batch_size = BATCH_SIZE
+        if batch_size:
+            self.batch_size = batch_size
         file_hash = self._hash(file_path)
         self._history_path = os.path.join(HISTORY_PATH, file_hash)
         self._log_file_path = os.path.join(self._history_path, LOG_FILENAME)
@@ -381,7 +384,7 @@ class SylvaApp(object):
                     nodes.append(temp_node)
                     nodes_list.append(temp_node_list)
                     nodes_batch_limit += 1
-                    if nodes_batch_limit == BATCH_SIZE:
+                    if nodes_batch_limit == self.batch_size:
                         print("Dumping {} nodes...".format(len(nodes_list)))
                         self._dump_nodes(csv_writer, key, val,
                                          nodetype, columns, nodes, nodes_list)
@@ -536,7 +539,7 @@ class SylvaApp(object):
                         column_index += 1
                     relationships.append(temp_rel)
                     relationships_batch_limit += 1
-                    if relationships_batch_limit == BATCH_SIZE:
+                    if relationships_batch_limit == self.batch_size:
                         print("Dumping {} relationships...".format(
                             len(relationships)))
                         if val == CREATE:
@@ -579,10 +582,12 @@ def main():
     parser.add_argument(
         'file', help='CSV file used to dump the data into SylvaDB')
 
+    parser.add_argument(
+        '--batch_size', help='Batch size used to dump the data into SylvaDB')
     args = parser.parse_args()
     file_path = args.file
-
-    app = SylvaApp(file_path)
+    batch_size = args.batch_size
+    app = SylvaApp(file_path, batch_size)
     app.populate_data()
 
 
