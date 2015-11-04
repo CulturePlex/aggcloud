@@ -3,7 +3,7 @@ import geojson
 
 # If the coordinates come in (Latitude, Longitude) format, setting
 # "REVERSE_COORDINATES" to "True" it will reverse them for be in
-# "GeoJSON format".
+# "GeoJSON format", but only when they are coming inside list(s).
 REVERSE_COORDINATES = True
 
 
@@ -46,14 +46,15 @@ def point(latitude, longitude=None):
     """
     if not longitude:
         latitude = string_to_list_or_tuple(latitude)
-        longitude = latitude[1]
-        latitude = latitude[0]
+        if REVERSE_COORDINATES:
+            longitude = latitude[1]
+            latitude = latitude[0]
+        else:
+            longitude = latitude[0]
+            latitude = latitude[1]
     latitude = float(latitude)
     longitude = float(longitude)
-    coordinates = (latitude, longitude)
-    if REVERSE_COORDINATES:
-        coordinates = coordinates[::-1]
-    geojson_point = geojson.Point(coordinates)
+    geojson_point = geojson.Point((longitude, latitude))
     check_geojson_validity(geojson_point)
     return geojson.dumps(geojson_point)
 
