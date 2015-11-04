@@ -1,6 +1,11 @@
 import ast
 import geojson
 
+# If the coordinates come in (Latitude, Longitude) format, setting
+# "REVERSE_COORDINATES" to "True" it will reverse them for be in
+# "GeoJSON format".
+REVERSE_COORDINATES = True
+
 
 # Util functions
 def string_to_list_or_tuple(string_input):
@@ -45,7 +50,10 @@ def point(latitude, longitude=None):
         latitude = latitude[0]
     latitude = float(latitude)
     longitude = float(longitude)
-    geojson_point = geojson.Point((latitude, longitude))
+    coordinates = (latitude, longitude)
+    if REVERSE_COORDINATES:
+        coordinates = coordinates[::-1]
+    geojson_point = geojson.Point(coordinates)
     check_geojson_validity(geojson_point)
     return geojson.dumps(geojson_point)
 
@@ -66,6 +74,8 @@ def path(*coordinates):
         "[-105, 40]", "[-110, 45]", "[-115, 55]"
     """
     coordinates = join_coordinates(coordinates)
+    if REVERSE_COORDINATES:
+        coordinates = [coors[::-1] for coors in coordinates]
     geojson_path = geojson.LineString(coordinates)
     check_geojson_validity(geojson_path)
     return geojson.dumps(geojson_path)
@@ -99,6 +109,9 @@ def area(*coordinates):
     for polygon in coordinates:
         if polygon[0] != polygon[-1]:
             polygon.append(polygon[0])
+    if REVERSE_COORDINATES:
+        coordinates = [[coors[::-1] for polygon in coordinates
+                        for coors in polygon]]
     geojson_area = geojson.Polygon(coordinates)
     check_geojson_validity(geojson_area)
     return geojson.dumps(geojson_area)
