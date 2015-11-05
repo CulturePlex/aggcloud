@@ -299,7 +299,8 @@ class SylvaApp(object):
                                 param_index = self._headers_indexes[param]
                                 param_value = temp_data[param_index]
                                 params_values.append(param_value)
-                            cast_func = getattr(castings, func)
+                            cast_func = getattr(castings, func,
+                                                lambda *x: u",".join(x))
                             csv_header = self._nodetypes_casting_types[func]
                             result = cast_func(*params_values)
                             csv_headers_castings.append(csv_header)
@@ -583,7 +584,7 @@ def main():
         'file', help='CSV file used to dump the data into SylvaDB')
 
     parser.add_argument(
-        '--batch_size', help='Batch size used to dump the data into SylvaDB')
+        '--batch-size', help='Batch size used to dump the data into SylvaDB')
     args = parser.parse_args()
     file_path = args.file
     batch_size = args.batch_size
