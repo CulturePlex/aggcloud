@@ -104,9 +104,12 @@ class SylvaApp(object):
                 if isinstance(val, (tuple, list)):
                     func = val[0]
                     params = val[1:]
-                    self._nodetypes_casting_types[func] = key
+                    # The key is a combination of the two elements
+                    # involved in the casting: The func and
+                    # the params. This is it to avoid conflicts.
+                    dict_key = (func, params)
+                    self._nodetypes_casting_types[dict_key] = key
                     for param in params:
-                        self._nodetypes[type].append(param)
                         try:
                             casting_elem = {}
                             casting_elem[func] = params
@@ -123,7 +126,8 @@ class SylvaApp(object):
                                     (self._nodetypes_casting_elements[type]
                                         .append(casting_elem))
                 else:
-                    self._nodetypes[type].append(val)
+                    if val not in self._nodetypes[type]:
+                        self._nodetypes[type].append(val)
                     self._nodetypes_mapping[val] = key
 
     def _setup_reltypes(self):
@@ -300,8 +304,11 @@ class SylvaApp(object):
                                 param_value = temp_data[param_index]
                                 params_values.append(param_value)
                             cast_func = getattr(castings, func,
-                                                lambda *x: u",".join(x))
-                            csv_header = self._nodetypes_casting_types[func]
+                                                lambda *x: u",".join(
+                                                    map(repr, x)))
+                            dict_key = (func, params)
+                            csv_header = (
+                                self._nodetypes_casting_types[dict_key])
                             result = cast_func(*params_values)
                             csv_headers_castings.append(csv_header)
                             temp_node.append(result)
@@ -325,8 +332,13 @@ class SylvaApp(object):
                         bad_headers = [
                             self._headers[i] for i in headers_indexes]
                         for header in bad_headers:
-                            csv_header = self._nodetypes_mapping[header]
-                            csv_headers.append(csv_header)
+                            try:
+                                csv_header = self._nodetypes_mapping[header]
+                                csv_headers.append(csv_header)
+                            except:
+                                # This exception is produced by the mapping
+                                # with the casting function
+                                pass
                         csv_headers_basics.extend(csv_headers)
                         csv_headers_basics.extend(csv_headers_castings)
                         csv_writer.writerow(csv_headers_basics)
