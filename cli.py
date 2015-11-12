@@ -34,7 +34,7 @@ _statuses = [
     "RULES_LOADING", "API_CONNECTING", "CHECKING_TOKEN", "CHECKING_SCHEMA",
     "CSV_COLUMNS_FORMATTING", "DATA_NODES_FORMATTING", "DATA_NODES_DUMPING",
     "RELATIONSHIPS_PREPARING", "DATA_RELATIONSHIPS_FORMATTING",
-    "DATA_RELATIONSHIPS_DUMPING", "EXECUTION_COMPLETED", "RESUMING_LOAD",
+    "DATA_RELATIONSHIPS_DUMPING", "EXECUTION_COMPLETED", "RESUMING_LOAD"
 ]
 STATUS = namedtuple("Status", _statuses)(**dict([(s, s) for s in _statuses]))
 
@@ -73,9 +73,8 @@ class SylvaApp(object):
         self._rel_properties = {}
         self._nodes_ids = {}
         self._nodetypes_mapping = {}
-        self._nodetypes_casting_elements = {}
         self._headers_indexes = {}
-        self._nodetypes_casting_types = {}
+        self._nodetypes_casting_elements = {}
         # Variables to format the data
         # Properties_index will contain the ids for the columns for each type
         self._headers = []
@@ -104,23 +103,16 @@ class SylvaApp(object):
                 if isinstance(val, (tuple, list)):
                     func = val[0]
                     params = val[1:]
-                    # The key is a combination of the two elements
-                    # involved in the casting: The func and
-                    # the params. This is it to avoid conflicts.
-                    dict_key = (func, params)
-                    self._nodetypes_casting_types[dict_key] = key
                     for param in params:
                         try:
-                            casting_elem = {}
-                            casting_elem[func] = params
+                            casting_elem = (key, func, params)
                             if(casting_elem not in
                                self._nodetypes_casting_elements[type]):
                                     (self._nodetypes_casting_elements[type]
                                         .append(casting_elem))
                         except:
                             self._nodetypes_casting_elements[type] = []
-                            casting_elem = {}
-                            casting_elem[func] = params
+                            casting_elem = (key, func, params)
                             if(casting_elem not in
                                self._nodetypes_casting_elements[type]):
                                     (self._nodetypes_casting_elements[type]
@@ -235,7 +227,7 @@ class SylvaApp(object):
             pass
         else:
             raise ValueError(
-                "The schema isn't correct. Please, check it and restart"
+                "The schema isn't correct. Please, check it and restart "
                 "the execution.")
 
     def format_data_columns(self):
@@ -296,9 +288,13 @@ class SylvaApp(object):
                         casting_functions = []
                     csv_headers_castings = []
                     for casting_function in casting_functions:
-                        for func, params in casting_function.iteritems():
-                            # Let's get the index to get the values for params
-                            params_values = []
+                        # Let's extract the elements from the tuple
+                        csv_header = casting_function[0]
+                        func = casting_function[1]
+                        params = casting_function[2]
+                        # Let's get the index to get the values for params
+                        params_values = []
+                        try:
                             for param in params:
                                 param_index = self._headers_indexes[param]
                                 param_value = temp_data[param_index]
@@ -306,12 +302,16 @@ class SylvaApp(object):
                             cast_func = getattr(castings, func,
                                                 lambda *x: u",".join(
                                                     map(repr, x)))
-                            dict_key = (func, params)
-                            csv_header = (
-                                self._nodetypes_casting_types[dict_key])
                             result = cast_func(*params_values)
                             csv_headers_castings.append(csv_header)
                             temp_node.append(result)
+                        except KeyError:
+                            raise ValueError(
+                                "There is something wrong with the csv file "
+                                "or with the rules file. "
+                                "Please, check it and restart the execution. "
+                                "If the problem persists, please contact us :)"
+                            )
                     # We check the csv file needed
                     try:
                         csv_writer = csv_writers[key]
