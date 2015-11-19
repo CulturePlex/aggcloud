@@ -78,6 +78,7 @@ class SylvaApp(object):
         # Variables to format the data
         # Properties_index will contain the ids for the columns for each type
         self._headers = []
+        self._rules_headers = []
         self._properties_index = {}
         # Variable to store the indices to include in the relationships file
         self._relationships_headers = []
@@ -117,10 +118,14 @@ class SylvaApp(object):
                                self._nodetypes_casting_elements[type]):
                                     (self._nodetypes_casting_elements[type]
                                         .append(casting_elem))
+                        if param not in self._rules_headers:
+                            self._rules_headers.append(param)
                 else:
                     if val not in self._nodetypes[type]:
                         self._nodetypes[type].append(val)
                     self._nodetypes_mapping[val] = key
+                    if val not in self._rules_headers:
+                            self._rules_headers.append(val)
 
     def _setup_reltypes(self):
         # Relationships settings
@@ -254,6 +259,34 @@ class SylvaApp(object):
                         self._properties_index[key].append(column_index)
             self._headers_indexes[prop] = column_index
             column_index += 1
+        # Let's check if the CSV headers in the rules file are actually
+        # in the CSV file
+        for header in self._rules_headers:
+            if header not in self._headers:
+                raise ValueError(
+                    "CSV file headers do not match the rules file headers. "
+                    "Please, check it and restart the execution."
+                )
+        # Let's check if all the properties in the rules file are actually
+        # defined in the schema
+        for key, values in self._nodetypes.iteritems():
+            # Check if the type has casting functions defined
+            try:
+                casting_functions = self._nodetypes_casting_elements[key]
+                properties = [prop[0] for prop in casting_functions]
+            except:
+                properties = []
+            # We need to map the values from the nodetype
+            values_mapped = [self._nodetypes_mapping[val] for val in values]
+            properties.extend(values_mapped)
+            # We get the properties for the type from the schema
+            type_properties = self._schema['nodeTypes'][key.title()].keys()
+            for prop in properties:
+                if prop not in type_properties:
+                    raise ValueError(
+                        "Schema properties do not match the rules properties. "
+                        "Please, check it and restart the execution."
+                    )
         csv_file.close()
 
     def format_data_nodes(self):
@@ -279,6 +312,7 @@ class SylvaApp(object):
                     temp_node = []
                     for index in val:
                         temp_value = temp_data[index]
+                        header = self._headers[index]
                         temp_node.append(temp_value)
                     # Check if we have casting function
                     try:
