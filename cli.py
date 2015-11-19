@@ -312,7 +312,6 @@ class SylvaApp(object):
                     temp_node = []
                     for index in val:
                         temp_value = temp_data[index]
-                        header = self._headers[index]
                         temp_node.append(temp_value)
                     # Check if we have casting function
                     try:

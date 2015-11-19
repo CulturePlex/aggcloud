@@ -7,6 +7,20 @@ import geojson
 REVERSE_COORDINATES = True
 
 
+# Datatypes to apply the default casting
+DATATYPE = {
+    u's': 'string',
+    u'b': 'boolean',
+    u'n': 'number',
+    u'x': 'string',
+    u'f': 'number',
+    u'r': 'string',
+    u'i': 'number',
+    u'o': 'number',
+    u'e': 'string'
+}
+
+
 # Util functions
 def string_to_list_or_tuple(string_input):
     if isinstance(string_input, basestring):
@@ -135,3 +149,22 @@ def number(value):
         else:
             break
     return value
+
+
+def string(value):
+    try:
+        return unicode(value)
+    except ValueError:
+        return value
+
+
+def boolean(value):
+    if isinstance(value, (str, unicode)):
+        if value == 'True':
+            return True
+        else:
+            return False
+    try:
+        return bool(value)
+    except ValueError:
+        return value
