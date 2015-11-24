@@ -100,6 +100,8 @@ class SylvaApp(object):
             self._rel_properties[type] = rel_property
             self._nodetypes[type] = []
             for key, val in nodetype['properties'].iteritems():
+                # We remove spaces from beginning and end
+                key = key.strip()
                 # We check if we have a casting function defined
                 if isinstance(val, (tuple, list)):
                     func = val[0]
@@ -178,32 +180,36 @@ class SylvaApp(object):
                     )
                     remote_id = str(results['nodes'][0]['id'])
                     nodes_ids.append(remote_id)
-                except IndexError:
+                except:
                     node_id = self._api.post_nodes(
                         nodetype, params=[nodes[node_index]])
                     nodes_ids.extend(node_id)
                 node_index += 1
         if mode == CREATE:
-            temp_nodes_ids = (
-                self._api.post_nodes(nodetype, params=nodes))
-            nodes_ids.extend(temp_nodes_ids)
-        id_index = 0
-        for node in nodes_list:
-            node_values = node
-            property_type = self._rel_properties[nodetype]
-            # Let's get the value for the property
             try:
-                property_index = columns.index(property_type)
+                temp_nodes_ids = (
+                    self._api.post_nodes(nodetype, params=nodes))
+                nodes_ids.extend(temp_nodes_ids)
             except:
-                property_index = 0
-            remote_id = str(nodes_ids[id_index])
-            self._relationships_index[node_values[property_index]] = (
-                type, remote_id)
-            if nodetype not in self._relationships_headers:
-                self._relationships_headers.append(nodetype)
-            node_values.append(remote_id)
-            csv_writer.writerow(node_values)
-            id_index += 1
+                pass
+        id_index = 0
+        if len(nodes_ids) != 0:
+            for node in nodes_list:
+                node_values = node
+                remote_id = str(nodes_ids[id_index])
+                relationship_index_list = (node_values[2:], remote_id)
+                try:
+                    self._relationships_index[type].append(
+                        relationship_index_list)
+                except:
+                    self._relationships_index[type] = []
+                    self._relationships_index[type].append(
+                        relationship_index_list)
+                if nodetype not in self._relationships_headers:
+                    self._relationships_headers.append(nodetype)
+                node_values.append(remote_id)
+                csv_writer.writerow(node_values)
+                id_index += 1
 
     def check_token(self):
         """
@@ -248,6 +254,8 @@ class SylvaApp(object):
         columns = csv_reader.next()
         column_index = 0
         for prop in columns:
+            # We remove spaces from beginning and end
+            prop = prop.strip()
             self._headers.append(prop)
             for key, val in self._nodetypes.iteritems():
                 if prop in val:
@@ -273,7 +281,7 @@ class SylvaApp(object):
             # Check if the type has casting functions defined
             try:
                 casting_functions = self._nodetypes_casting_elements[key]
-                properties = [prop[0] for prop in casting_functions]
+                properties = [elems[0] for elems in casting_functions]
             except:
                 properties = []
             # We need to map the values from the nodetype
@@ -312,6 +320,10 @@ class SylvaApp(object):
                     temp_node = []
                     for index in val:
                         temp_value = temp_data[index]
+                        # Here, we apply the default casting
+                        header = self._headers[index]
+                        # datatype = (
+                        #     self._schema['nodeTypes'][key][header]['datatype'])
                         temp_node.append(temp_value)
                     # Check if we have casting function
                     try:
@@ -459,23 +471,58 @@ class SylvaApp(object):
         csv_reader.next()
         columns = []
         rows = {}
+
         try:
             temp_data = csv_reader.next()
             while temp_data:
-                for elem in temp_data:
+                for key, values in self._properties_index.iteritems():
+                    type_temp_data = []
+                    for index in values:
+                        type_temp_data.append(temp_data[index])
+                    # We check if the key has casting functions
                     try:
-                        reltype = self._relationships_index[elem][0]
-                        remote_id = self._relationships_index[elem][1]
-                        try:
-                            rows[reltype].append(remote_id)
-                        except KeyError:
-                            rows[reltype] = []
-                            rows[reltype].append(remote_id)
+                        casting_functions = (
+                            self._nodetypes_casting_elements[key])
                     except KeyError:
-                        pass
+                        casting_functions = []
+                    for casting_function in casting_functions:
+                        # Let's extract the elements that we need
+                        # from the tuple
+                        func = casting_function[1]
+                        params = casting_function[2]
+                        # Let's get the index to get the values for params
+                        params_values = []
+                        try:
+                            for param in params:
+                                param_index = self._headers_indexes[param]
+                                param_value = temp_data[param_index]
+                                params_values.append(param_value)
+                            cast_func = getattr(castings, func,
+                                                lambda *x: u",".join(
+                                                    map(repr, x)))
+                            result = cast_func(*params_values)
+                            type_temp_data.append(unicode(result))
+                        except KeyError:
+                            raise ValueError(
+                                "There is something wrong with the csv file "
+                                "or with the rules file. "
+                                "Please, check it and restart the execution. "
+                                "If the problem persists, please contact us :)"
+                            )
+                    type_nodes_values = self._relationships_index[key]
+                    for type_nodes_value in type_nodes_values:
+                        if type_nodes_value[0] == type_temp_data:
+                            remote_id = type_nodes_value[1]
+                            try:
+                                rows[key].append(remote_id)
+                            except KeyError:
+                                rows[key] = []
+                                rows[key].append(remote_id)
+                            break
                 temp_data = csv_reader.next()
         except:
             pass
+
         csv_file.close()
 
         csv_file_path = os.path.join(self._history_path, '_relationships.csv')
