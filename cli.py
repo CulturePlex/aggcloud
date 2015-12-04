@@ -65,15 +65,14 @@ class SylvaApp(object):
             shutil.copy(file_path, self._file_path)
         # We load the config.json file to set up variables
         self._status(STATUS.RULES_LOADING, "Loading rules for the graph...")
-        # Settings
         self._token = rules.GRAPH_SETTINGS['token']
         self._graph = rules.GRAPH_SETTINGS['graph']
-        self._schema = json.loads(rules.SCHEMA)
-        self._csv_columns_indexes = {}
         # Variables to manage nodetypes
         self._nodetypes = {}
         self._nodetypes_id_label = {}
-        self._nodetypes_types_names = {}
+        self._nodetypes_graph_names = {}
+        self._nodetypes_graph_slugs = {}
+        self._nodetypes_graph_ids = {}
         self._nodetypes_mode = {}
         self._nodetypes_headers_mapping = {}
         self._nodetypes_casting_elements = {}
@@ -84,19 +83,33 @@ class SylvaApp(object):
         self._rules_headers = []
         # Dictionary to store the index of each column that belongs to a type
         self._types_properties_indexes = {}
-        # Variables to populate the data
-        self._setup_nodetypes()
-        self._setup_reltypes()
+        # Checking the connection with the API
         self._status(STATUS.API_CONNECTING,
                      "Connecting with the SylvaDB API...")
         self._api = API(token=self._token, graph_slug=self._graph)
+        # Settings
+        self._schema = json.loads(rules.SCHEMA)
+        self._schema_id = self._api.get_graph()['schema']
+        self._csv_columns_indexes = {}
 
     def _setup_nodetypes(self):
         nodetypes = rules.NODES
         for nodetype in nodetypes:
-            type_slug = nodetype['slug']
+            # Let's extract the slug directly from the graph using the API
+            graph_nodetypes = self._api.get_nodetypes()
             type = nodetype['type']
-            self._nodetypes_types_names[type_slug] = type
+            for graph_nodetype in graph_nodetypes:
+                nodetype_name = graph_nodetype['name']
+                if type == nodetype_name:
+                    type_slug = graph_nodetype['slug']
+                    break
+            # These structures are useful to mapping the slug and the id
+            # to build our relationships
+            self._nodetypes_graph_names[type_slug] = type
+            self._nodetypes_graph_slugs[type] = type_slug
+            nodetype_id = self._api.get_nodetype_schema(type_slug)['id']
+            self._nodetypes_graph_ids[type] = nodetype_id
+
             mode = nodetype['mode']
             self._nodetypes_mode[type_slug] = mode
             id_label = nodetype.get('id', None)
@@ -138,10 +151,25 @@ class SylvaApp(object):
         self._reltypes = {}
         self._rel_ids = {}
         for reltype in reltypes:
-            type_slug = reltype['slug']
+            source_id = self._nodetypes_graph_ids[reltype['source']]
+            target_id = self._nodetypes_graph_ids[reltype['target']]
+            # Let's extract the slug directly from the graph using the API
+            graph_reltypes = self._api.get_relationshiptypes()
+            type = reltype['type']
+            for graph_reltype in graph_reltypes:
+                rel_name = graph_reltype['name']
+                rel_schema = graph_reltype['schema']
+                rel_source = graph_reltype['source']
+                rel_target = graph_reltype['target']
+                if ((type == rel_name)
+                    and (self._schema_id == rel_schema)
+                    and (source_id == rel_source)
+                        and (target_id == rel_target)):
+                    type_slug = graph_reltype['slug']
+                    break
+            source = self._nodetypes_graph_slugs[reltype['source']]
+            target = self._nodetypes_graph_slugs[reltype['target']]
             id = reltype['id']
-            source = reltype['source']
-            target = reltype['target']
             relationship = {}
             relationship[source] = 'source'
             relationship[target] = 'target'
@@ -225,7 +253,7 @@ class SylvaApp(object):
                 self._nodes_ids_mapping[type][local_id] = remote_id
             csv_writer.writerow(new_node)
 
-    def check_token(self):
+    def _check_token(self):
         """
         We check the schema to allow the entire execution.
         """
@@ -240,7 +268,7 @@ class SylvaApp(object):
                 "restart the execution."
                 "If the problem persists, please contact us :)")
 
-    def check_schema(self):
+    def _check_schema(self):
         """
         We check the schema to allow the entire execution.
         """
@@ -305,7 +333,8 @@ class SylvaApp(object):
                 self._nodetypes_headers_mapping[val] for val in type_props]
             properties.extend(values_mapped)
             # We get the properties for the type from the schema
-            type_properties = self._schema['nodeTypes'][type.title()].keys()
+            nodetype = self._nodetypes_graph_names[type]
+            type_properties = self._schema['nodeTypes'][nodetype].keys()
             for prop in properties:
                 if prop not in type_properties:
                     raise ValueError(
@@ -415,11 +444,11 @@ class SylvaApp(object):
                         csv_writer.writerow(csv_headers_basics)
                     # Let's add our node
                     # We create a temp key to store the ids
-                    nodes_ids_key = "_".join(temp_node)
+                    nodes_ids_key = "_".join([str(elem) for elem in temp_node])
                     if temp_node not in csv_nodes_treated:
                         node_id = csv_file_node_id[type]
                         nodes_id[nodes_ids_key] = node_id
-                        type_name = self._nodetypes_types_names[type]
+                        type_name = self._nodetypes_graph_names[type]
                         node_basics = [str(node_id), type_name]
                         node_basics.extend(temp_node)
                         csv_writer.writerow(node_basics)
@@ -635,8 +664,10 @@ class SylvaApp(object):
         """
         # We check if we need to format the data yet
         try:
-            self.check_token()
-            self.check_schema()
+            self._check_token()
+            self._check_schema()
+            self._setup_nodetypes()
+            self._setup_reltypes()
             self.format_data_columns()
             self.format_data_nodes()
             self.populate_nodes()
