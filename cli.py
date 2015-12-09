@@ -376,7 +376,7 @@ class SylvaApp(object):
         csv_reader = unicodecsv.reader(csv_root_file, encoding="utf-8")
         # We create the file to dump the relationships by row
         csv_relationships_path = os.path.join(
-            self._history_path, '_relationships.csv')
+            self._history_path, "_{}.csv".format('relationships'))
         csv_relationships = open(csv_relationships_path, 'w+')
         csv_writer_rels = unicodecsv.writer(
             csv_relationships, encoding="utf-8")
@@ -547,8 +547,15 @@ class SylvaApp(object):
                 print("Dumping {} nodes...".format(len(nodes_list)))
                 self._dump_nodes(csv_writer, type, mode, nodetype, columns,
                                  nodes, nodes_list)
+            # We get the names for the files
+            old_ids_file_name = csv_file_type.name
+            new_ids_file_name = csv_file_type_new.name
+            # We close the files
             csv_file_type.close()
             csv_file_type_new.close()
+            # We remove the old csv and rename the new
+            os.remove(old_ids_file_name)
+            os.rename(new_ids_file_name, old_ids_file_name)
 
     def preparing_relationships(self):
         """
@@ -557,11 +564,13 @@ class SylvaApp(object):
         """
         self._status(STATUS.RELATIONSHIPS_PREPARING,
                      "Preparing data for relationships...")
-        csv_file_path = os.path.join(self._history_path, "_relationships.csv")
+        csv_file_path = os.path.join(self._history_path,
+                                     "_{}.csv".format('relationships'))
         csv_file = open(csv_file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
         csv_file_new_path = os.path.join(self._history_path,
-                                         "_relationships_new_ids.csv")
+                                         "_{}_new_ids.csv".format(
+                                             'relationships'))
         csv_new_file = open(csv_file_new_path, 'w')
         csv_writer_new = unicodecsv.writer(csv_new_file, encoding="utf-8")
         headers = csv_reader.next()
@@ -580,8 +589,15 @@ class SylvaApp(object):
                 csv_row = csv_reader.next()
         except StopIteration:
             pass
+        # We get the names for the files
+        old_ids_file_name = csv_file.name
+        new_ids_file_name = csv_new_file.name
         # We close the files
         csv_file.close()
+        csv_new_file.close()
+        # We remove the old csv and rename the new
+        os.remove(old_ids_file_name)
+        os.rename(new_ids_file_name, old_ids_file_name)
 
     def format_data_relationships(self):
         """
@@ -590,8 +606,9 @@ class SylvaApp(object):
         """
         self._status(STATUS.DATA_RELATIONSHIPS_FORMATTING,
                      "Formatting data for relationships...")
+        file_name = "_relationships.csv"
         csv_file_path = os.path.join(self._history_path,
-                                     '_relationships_new_ids.csv')
+                                     file_name)
         csv_file_root = open(csv_file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file_root, encoding="utf-8")
 
@@ -683,6 +700,7 @@ class SylvaApp(object):
                 if val == CREATE:
                     self._api.post_relationships(reltype,
                                                  params=relationships)
+            csv_file.close()
 
     def populate_data(self):
         """
