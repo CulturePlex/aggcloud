@@ -72,11 +72,14 @@ class SylvaApp(object):
         self._nodetypes_id_label = {}
         self._nodetypes_graph_names = {}
         self._nodetypes_graph_slugs = {}
+        self._nodetypes_rules_slugs = {}
         self._nodetypes_graph_ids = {}
         self._nodetypes_mode = {}
         self._nodetypes_headers_mapping = {}
         self._nodetypes_casting_elements = {}
         self._nodes_ids_mapping = {}
+        # Variables to manage reltypes
+        self._reltypes_rules_slugs = {}
         # Variables to format the data
         # List to store the headers from the csv. Lists maintain the order.
         self._headers = []
@@ -94,87 +97,107 @@ class SylvaApp(object):
 
     def _setup_nodetypes(self):
         nodetypes = rules.NODES
-        for nodetype in nodetypes:
-            # Let's extract the slug directly from the graph using the API
+        # Let's extract the slug directly from the graph using the API
+        graph_nodetypes_slugs = {}
+        try:
             graph_nodetypes = self._api.get_nodetypes()
-            type = nodetype['type']
+            # We create the dictionary to map the correct slug
             for graph_nodetype in graph_nodetypes:
-                nodetype_name = graph_nodetype['name']
-                if type == nodetype_name:
-                    type_slug = graph_nodetype['slug']
-                    break
-            # These structures are useful to mapping the slug and the id
-            # to build our relationships
-            self._nodetypes_graph_names[type_slug] = type
-            self._nodetypes_graph_slugs[type] = type_slug
-            nodetype_id = self._api.get_nodetype_schema(type_slug)['id']
-            self._nodetypes_graph_ids[type] = nodetype_id
+                graph_nodetypes_slugs[graph_nodetype['name']] = (
+                    graph_nodetype['slug'])
+            for nodetype in nodetypes:
+                type = nodetype['type']
+                type_slug = graph_nodetypes_slugs[type]
+                # These structures are useful to mapping the slug and the id
+                # to build our relationships
+                self._nodetypes_graph_names[type_slug] = type
+                self._nodetypes_graph_slugs[type] = type_slug
+                self._nodetypes_rules_slugs[type_slug] = nodetype['slug']
+                nodetype_id = self._api.get_nodetype_schema(type_slug)['id']
+                self._nodetypes_graph_ids[type] = nodetype_id
 
-            mode = nodetype['mode']
-            self._nodetypes_mode[type_slug] = mode
-            id_label = nodetype.get('id', None)
-            self._nodetypes_id_label[type_slug] = id_label
-            self._nodetypes[type_slug] = []
-            for key, val in nodetype['properties'].iteritems():
-                # We remove spaces from beginning and end
-                key = key.strip()
-                # We check if we have a casting function defined
-                if isinstance(val, (tuple, list)):
-                    func = val[0]
-                    params = val[1:]
-                    for param in params:
-                        try:
-                            casting_elem = (key, func, params)
-                            if(casting_elem not in
-                               self._nodetypes_casting_elements[type_slug]):
-                                    (self._nodetypes_casting_elements
-                                        [type_slug].append(casting_elem))
-                        except:
-                            self._nodetypes_casting_elements[type_slug] = []
-                            casting_elem = (key, func, params)
-                            if(casting_elem not in
-                               self._nodetypes_casting_elements[type_slug]):
-                                    (self._nodetypes_casting_elements
-                                        [type_slug].append(casting_elem))
-                        if param not in self._rules_headers:
-                            self._rules_headers.append(param)
-                else:
-                    if val not in self._nodetypes[type_slug]:
-                        self._nodetypes[type_slug].append(val)
-                    self._nodetypes_headers_mapping[val] = key
-                    if val not in self._rules_headers:
-                            self._rules_headers.append(val)
+                mode = nodetype['mode']
+                self._nodetypes_mode[type_slug] = mode
+                id_label = nodetype.get('id', None)
+                self._nodetypes_id_label[type_slug] = id_label
+                self._nodetypes[type_slug] = []
+                for key, val in nodetype['properties'].iteritems():
+                    # We remove spaces from beginning and end
+                    key = key.strip()
+                    # We check if we have a casting function defined
+                    if isinstance(val, (tuple, list)):
+                        func = val[0]
+                        params = val[1:]
+                        for param in params:
+                            try:
+                                casting_elem = (key, func, params)
+                                if(casting_elem not in
+                                   self._nodetypes_casting_elements
+                                   [type_slug]):
+                                        (self._nodetypes_casting_elements
+                                            [type_slug].append(casting_elem))
+                            except:
+                                self._nodetypes_casting_elements[type_slug] = (
+                                    [])
+                                casting_elem = (key, func, params)
+                                if(casting_elem not in
+                                   self._nodetypes_casting_elements
+                                   [type_slug]):
+                                        (self._nodetypes_casting_elements
+                                            [type_slug].append(casting_elem))
+                            if param not in self._rules_headers:
+                                self._rules_headers.append(param)
+                    else:
+                        if val not in self._nodetypes[type_slug]:
+                            self._nodetypes[type_slug].append(val)
+                        self._nodetypes_headers_mapping[val] = key
+                        if val not in self._rules_headers:
+                                self._rules_headers.append(val)
+        except:
+            raise ValueError(
+                "There are problems treating the nodetypes. "
+                "Maybe your schema isn't correct. Please, check it and "
+                "restart the execution. "
+                "If the problem persists, please contact us :)")
 
     def _setup_reltypes(self):
         # Relationships settings
         reltypes = rules.RELATIONSHIPS
         self._reltypes = {}
         self._rel_ids = {}
-        for reltype in reltypes:
-            source_id = self._nodetypes_graph_ids[reltype['source']]
-            target_id = self._nodetypes_graph_ids[reltype['target']]
-            # Let's extract the slug directly from the graph using the API
+        # Let's extract the slug directly from the graph using the API
+        graph_rels_slugs = {}
+        try:
             graph_reltypes = self._api.get_relationshiptypes()
-            type = reltype['type']
+            # We create the dictionary to map the correct slug
             for graph_reltype in graph_reltypes:
                 rel_name = graph_reltype['name']
                 rel_schema = graph_reltype['schema']
                 rel_source = graph_reltype['source']
                 rel_target = graph_reltype['target']
-                if ((type == rel_name)
-                    and (self._schema_id == rel_schema)
-                    and (source_id == rel_source)
-                        and (target_id == rel_target)):
-                    type_slug = graph_reltype['slug']
-                    break
-            source = self._nodetypes_graph_slugs[reltype['source']]
-            target = self._nodetypes_graph_slugs[reltype['target']]
-            id = reltype['id']
-            relationship = {}
-            relationship[source] = 'source'
-            relationship[target] = 'target'
-            self._reltypes[type_slug] = relationship
-            self._rel_ids[type_slug] = id
+                rel_key = (rel_name, rel_schema, rel_source, rel_target)
+                graph_rels_slugs[rel_key] = graph_reltype['slug']
+            for reltype in reltypes:
+                type = reltype['type']
+                source_id = self._nodetypes_graph_ids[reltype['source']]
+                target_id = self._nodetypes_graph_ids[reltype['target']]
+                reltype_key = (type, self._schema_id, source_id, target_id)
+                type_slug = graph_rels_slugs[reltype_key]
+                source = self._nodetypes_graph_slugs[reltype['source']]
+                target = self._nodetypes_graph_slugs[reltype['target']]
+                id = reltype['id']
+                relationship = {}
+                relationship[source] = 'source'
+                relationship[target] = 'target'
+                self._reltypes_rules_slugs[type_slug] = reltype['slug']
+                self._reltypes[type_slug] = relationship
+                self._rel_ids[type_slug] = id
+        except:
+            raise ValueError(
+                "There are problems treating the relationship types. "
+                "Maybe your schema isn't correct. Please, check it and "
+                "restart the execution. "
+                "If the problem persists, please contact us :)")
 
     def _hash(self, filename, blocksize=65536):
         _hash = hashlib.sha256()
@@ -416,8 +439,9 @@ class SylvaApp(object):
                     try:
                         csv_writer = csv_writers[type]
                     except KeyError:
+                        csv_name = self._nodetypes_rules_slugs[type]
                         csv_file_path = os.path.join(self._history_path,
-                                                     "{}.csv".format(type))
+                                                     "{}.csv".format(csv_name))
                         csv_file = open(csv_file_path, 'w+')
                         csv_writer = unicodecsv.writer(csv_file,
                                                        encoding="utf-8")
@@ -448,8 +472,7 @@ class SylvaApp(object):
                     if temp_node not in csv_nodes_treated:
                         node_id = csv_file_node_id[type]
                         nodes_id[nodes_ids_key] = node_id
-                        type_name = self._nodetypes_graph_names[type]
-                        node_basics = [str(node_id), type_name]
+                        node_basics = [str(node_id), type]
                         node_basics.extend(temp_node)
                         csv_writer.writerow(node_basics)
                         csv_nodes_treated.append(temp_node)
@@ -480,10 +503,11 @@ class SylvaApp(object):
                      "Dumping the data for nodes into SylvaDB...")
         for type, mode in self._nodetypes_mode.iteritems():
             # We open the files to read and write
+            csv_name = self._nodetypes_rules_slugs[type]
             csv_file_path_type = os.path.join(self._history_path,
-                                              "{}.csv".format(type))
+                                              "{}.csv".format(csv_name))
             csv_file_path_type_new = os.path.join(
-                self._history_path, "{}_new_ids.csv".format(type))
+                self._history_path, "{}_new_ids.csv".format(csv_name))
             csv_file_type = open(csv_file_path_type, 'r')
             csv_file_type_new = open(csv_file_path_type_new, 'w+')
             csv_reader_type = unicodecsv.reader(csv_file_type,
@@ -588,8 +612,9 @@ class SylvaApp(object):
                     try:
                         csv_writer = csv_writers[key]
                     except:
+                        csv_name = self._reltypes_rules_slugs[key]
                         csv_file_path = os.path.join(self._history_path,
-                                                     "{}.csv".format(key))
+                                                     "{}.csv".format(csv_name))
                         csv_file = open(csv_file_path, 'w+')
                         csv_writer = unicodecsv.writer(csv_file,
                                                        encoding="utf-8")
@@ -622,8 +647,9 @@ class SylvaApp(object):
         self._status(STATUS.DATA_RELATIONSHIPS_DUMPING,
                      "Dumping the data for relationships into SylvaDB...")
         for key, val in self._rel_ids.iteritems():
+            csv_name = self._reltypes_rules_slugs[key]
             csv_file_path = os.path.join(self._history_path,
-                                         "{}.csv".format(key))
+                                         "{}.csv".format(csv_name))
             csv_file = open(csv_file_path, 'r')
             csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
             columns = csv_reader.next()
