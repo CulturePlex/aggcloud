@@ -218,10 +218,10 @@ class SylvaApp(object):
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
 
-    def _apply_casting(self, type, value):
+    def _apply_filtering_casting(self, type, property, value):
         datatypes_to_treat = [FLOAT, NUMBER]
         type_name = self._nodetypes_graph_names[type]
-        datatype = self._schema['nodeTypes'][type_name][value]['datatype']
+        datatype = self._schema['nodeTypes'][type_name][property]['datatype']
         if datatype in datatypes_to_treat:
             func = castings.DATATYPE[datatype]
             cast_func = getattr(castings, func)
@@ -244,8 +244,9 @@ class SylvaApp(object):
                             param_value = node[value_index]
                             # Let's check if we need to apply some casting
                             # for the values
-                            filtering_params[value] = self._apply_casting(
-                                nodetype, param_value)
+                            filtering_params[value] = (
+                                self._apply_filtering_casting(
+                                    nodetype, value, param_value))
                     else:
                         # In case that we dont have defined values to filter,
                         # we use all the values for the node.
@@ -260,8 +261,9 @@ class SylvaApp(object):
                             if correct_prop and not_empty_value:
                                 # Let's check if we need to apply some casting
                                 # for the values
-                                filtering_params[prop] = self._apply_casting(
-                                    nodetype, param_value)
+                                filtering_params[prop] = (
+                                    self._apply_filtering_casting(
+                                        nodetype, prop, param_value))
                     results = self._api.filter_nodes(
                         nodetype, params=filtering_params)
                     remote_id = str(results['nodes'][0]['id'])
