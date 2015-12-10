@@ -28,6 +28,10 @@ LOG_FILENAME = 'app.log'
 # Rules constants
 CREATE = 'create'
 GET_OR_CREATE = 'get_or_create'
+SOURCE = 'source'
+TARGET = 'target'
+FLOAT = u'f'
+NUMBER = u'n'
 
 # Status codes
 _statuses = [
@@ -115,7 +119,6 @@ class SylvaApp(object):
                 self._nodetypes_rules_slugs[type_slug] = nodetype['slug']
                 nodetype_id = self._api.get_nodetype_schema(type_slug)['id']
                 self._nodetypes_graph_ids[type] = nodetype_id
-
                 mode = nodetype['mode']
                 self._nodetypes_mode[type_slug] = mode
                 id_label = nodetype.get('id', None)
@@ -215,6 +218,16 @@ class SylvaApp(object):
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
 
+    def _apply_casting(self, type, value):
+        datatypes_to_treat = [FLOAT, NUMBER]
+        type_name = self._nodetypes_graph_names[type]
+        datatype = self._schema['nodeTypes'][type_name][value]['datatype']
+        if datatype in datatypes_to_treat:
+            func = castings.DATATYPE[datatype]
+            cast_func = getattr(castings, func)
+            value = cast_func(value)
+        return value
+
     def _dump_nodes(self, csv_writer, type, mode, nodetype, columns, nodes,
                     nodes_list):
         nodes_remote_id = []
@@ -228,7 +241,11 @@ class SylvaApp(object):
                     if filtering_values:
                         for value in filtering_values:
                             value_index = columns.index(value)
-                            filtering_params[value] = node[value_index]
+                            param_value = node[value_index]
+                            # Let's check if we need to apply some casting
+                            # for the values
+                            filtering_params[value] = self._apply_casting(
+                                nodetype, param_value)
                     else:
                         # In case that we dont have defined values to filter,
                         # we use all the values for the node.
@@ -236,11 +253,15 @@ class SylvaApp(object):
                         for prop, value in node_params.iteritems():
                             # We need to remove the id and type props
                             # and the props with empty values
+                            param_value = value
                             correct_prop = (prop != 'id') and (prop != 'type')
                             not_empty_value = (value != '') and (
                                 value is not None)
                             if correct_prop and not_empty_value:
-                                filtering_params[prop] = value
+                                # Let's check if we need to apply some casting
+                                # for the values
+                                filtering_params[prop] = self._apply_casting(
+                                    nodetype, param_value)
                     results = self._api.filter_nodes(
                         nodetype, params=filtering_params)
                     remote_id = str(results['nodes'][0]['id'])
@@ -644,9 +665,9 @@ class SylvaApp(object):
                     type = key
                     for key_t, val_t in val.iteritems():
                         data_index = columns_indexes[key_t]
-                        if val_t == 'source':
+                        if val_t == SOURCE:
                             source = csv_row_data[data_index]
-                        elif val_t == 'target':
+                        elif val_t == TARGET:
                             target = csv_row_data[data_index]
                     temp_row = [source, target, type]
                     csv_writers[key].writerow(temp_row)

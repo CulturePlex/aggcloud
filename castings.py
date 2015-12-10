@@ -13,7 +13,7 @@ DATATYPE = {
     u'b': 'boolean',
     u'n': 'number',
     u'x': 'string',
-    u'f': 'number',
+    u'f': 'float_func',
     u'r': 'string',
     u'i': 'number',
     u'o': 'number',
@@ -149,6 +149,13 @@ def number(value):
         else:
             break
     return value
+
+
+def float_func(value):
+    try:
+        return float(value)
+    except ValueError:
+        return value
 
 
 def string(value):
