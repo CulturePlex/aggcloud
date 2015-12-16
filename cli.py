@@ -21,7 +21,8 @@ APP_ROOT = os.path.dirname(__file__)
 HISTORY_PATH = os.path.join(APP_ROOT, "history")
 
 RULES_PATH = os.environ.get("RULES_PATH",
-                            os.path.join(APP_ROOT, "rules.py"))
+                            os.path.join(APP_ROOT,
+                                         "rules.py"))
 rules = imp.load_source('rules', RULES_PATH)
 LOG_FILENAME = 'app.log'
 
@@ -30,8 +31,6 @@ CREATE = 'create'
 GET_OR_CREATE = 'get_or_create'
 SOURCE = 'source'
 TARGET = 'target'
-FLOAT = u'f'
-NUMBER = u'n'
 
 # Status codes
 _statuses = [
@@ -218,16 +217,6 @@ class SylvaApp(object):
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
 
-    def _apply_filtering_casting(self, type, property, value):
-        datatypes_to_treat = [FLOAT, NUMBER]
-        type_name = self._nodetypes_graph_names[type]
-        datatype = self._schema['nodeTypes'][type_name][property]['datatype']
-        if datatype in datatypes_to_treat:
-            func = castings.DATATYPE[datatype]
-            cast_func = getattr(castings, func)
-            value = cast_func(value)
-        return value
-
     def _dump_nodes(self, csv_writer, type, mode, nodetype, columns, nodes,
                     nodes_list):
         nodes_remote_id = []
@@ -242,11 +231,7 @@ class SylvaApp(object):
                         for value in filtering_values:
                             value_index = columns.index(value)
                             param_value = node[value_index]
-                            # Let's check if we need to apply some casting
-                            # for the values
-                            filtering_params[value] = (
-                                self._apply_filtering_casting(
-                                    nodetype, value, param_value))
+                            filtering_params[value] = param_value
                     else:
                         # In case that we dont have defined values to filter,
                         # we use all the values for the node.
@@ -259,11 +244,7 @@ class SylvaApp(object):
                             not_empty_value = (value != '') and (
                                 value is not None)
                             if correct_prop and not_empty_value:
-                                # Let's check if we need to apply some casting
-                                # for the values
-                                filtering_params[prop] = (
-                                    self._apply_filtering_casting(
-                                        nodetype, prop, param_value))
+                                filtering_params[prop] = param_value
                     results = self._api.filter_nodes(
                         nodetype, params=filtering_params)
                     remote_id = str(results['nodes'][0]['id'])
@@ -405,8 +386,7 @@ class SylvaApp(object):
             csv_relationships, encoding="utf-8")
         csv_relationships_headers = []
         csv_rels_headers_written = False
-        # We read the headers, to avoid the columns
-        csv_reader.next()
+        columns = csv_reader.next()
         # The rest of the lines are data
         csv_files = {}
         csv_writers = {}
@@ -415,101 +395,116 @@ class SylvaApp(object):
         csv_nodes_treated = []
         try:
             csv_row = csv_reader.next()
+            csv_row_length = len(csv_row) == len(columns)
+            csv_row_not_empty = len(csv_row) != 0
+            correct_row = csv_row_length and csv_row_not_empty
             while csv_row:
-                relationships_node_ids = []
-                for type, prop_indexes in (
-                        self._types_properties_indexes.iteritems()):
-                    # Create the node in two steps
-                    # First we get the values using the index of columns
-                    # related to each type. Then, applying casting functions.
-                    temp_node = []
-                    for index in prop_indexes:
-                        temp_value = csv_row[index]
-                        temp_node.append(temp_value)
-                    # Check if we have casting function
-                    try:
-                        casting_functions = (
-                            self._nodetypes_casting_elements[type])
-                    except KeyError:
-                        casting_functions = []
-                    csv_headers_castings = []
-                    for casting_function in casting_functions:
-                        # Let's extract the elements from the tuple
-                        csv_header = casting_function[0]
-                        func = casting_function[1]
-                        params = casting_function[2]
-                        # Let's get the index to get the values for params
-                        params_values = []
+                if correct_row:
+                    relationships_node_ids = []
+                    for type, prop_indexes in (
+                            self._types_properties_indexes.iteritems()):
+                        # Create the node in two steps
+                        # First we get the values using the index of columns
+                        # related to each type. Then, applying casting
+                        # functions.
+                        temp_node = []
+                        for index in prop_indexes:
+                            temp_value = csv_row[index]
+                            temp_node.append(temp_value)
+                        # Check if we have casting function
                         try:
-                            for param in params:
-                                param_index = self._csv_columns_indexes[param]
-                                param_value = csv_row[param_index]
-                                params_values.append(param_value)
-                            cast_func = getattr(castings, func,
-                                                lambda *x: u",".join(
-                                                    map(repr, x)))
-                            result = cast_func(*params_values)
-                            csv_headers_castings.append(csv_header)
-                            temp_node.append(result)
+                            casting_functions = (
+                                self._nodetypes_casting_elements[type])
                         except KeyError:
-                            raise ValueError(
-                                "There is something wrong with the csv file "
-                                "or with the rules file. "
-                                "Please, check it and restart the execution. "
-                                "If the problem persists, please contact us :)"
-                            )
-                    # We write the node values in the right csv file
-                    try:
-                        csv_writer = csv_writers[type]
-                    except KeyError:
-                        csv_name = self._nodetypes_rules_slugs[type]
-                        csv_file_path = os.path.join(self._history_path,
-                                                     "{}.csv".format(csv_name))
-                        csv_file = open(csv_file_path, 'w+')
-                        csv_writer = unicodecsv.writer(csv_file,
-                                                       encoding="utf-8")
-                        csv_files[type] = csv_file
-                        csv_writers[type] = csv_writer
-                        csv_file_node_id[type] = 1
-                        # Let's get the headers correctly
-                        csv_headers_basics = ['id', 'type']
-                        csv_headers = []
-                        headers_indexes = self._types_properties_indexes[type]
-                        not_mapped_headers = [
-                            self._headers[i] for i in headers_indexes]
-                        for header in not_mapped_headers:
+                            casting_functions = []
+                        csv_headers_castings = []
+                        for casting_function in casting_functions:
+                            # Let's extract the elements from the tuple
+                            csv_header = casting_function[0]
+                            func = casting_function[1]
+                            params = casting_function[2]
+                            # Let's get the index to get the values for params
+                            params_values = []
                             try:
-                                csv_header = (
-                                    self._nodetypes_headers_mapping[header])
-                                csv_headers.append(csv_header)
-                            except:
-                                # This exception is produced by the mapping
-                                # with the casting function
-                                pass
-                        csv_headers_basics.extend(csv_headers)
-                        csv_headers_basics.extend(csv_headers_castings)
-                        csv_writer.writerow(csv_headers_basics)
-                    # Let's add our node
-                    # We create a temp key to store the ids
-                    nodes_ids_key = "_".join([str(elem) for elem in temp_node])
-                    if temp_node not in csv_nodes_treated:
-                        node_id = csv_file_node_id[type]
-                        nodes_id[nodes_ids_key] = node_id
-                        node_basics = [str(node_id), type]
-                        node_basics.extend(temp_node)
-                        csv_writer.writerow(node_basics)
-                        csv_nodes_treated.append(temp_node)
-                        csv_file_node_id[type] += 1
-                    relationships_node_ids.append(nodes_id[nodes_ids_key])
-                    # Let's update our structures for the relationships file
-                    if type not in csv_relationships_headers:
-                        csv_relationships_headers.append(type)
-                # We dump the values for our relationships
-                if not csv_rels_headers_written:
-                    csv_writer_rels.writerow(csv_relationships_headers)
-                    csv_rels_headers_written = True
-                csv_writer_rels.writerow(relationships_node_ids)
+                                for param in params:
+                                    param_index = self._csv_columns_indexes[
+                                        param]
+                                    param_value = csv_row[param_index]
+                                    params_values.append(param_value)
+                                cast_func = getattr(castings, func,
+                                                    lambda *x: u",".join(
+                                                        map(repr, x)))
+                                result = cast_func(*params_values)
+                                csv_headers_castings.append(csv_header)
+                                temp_node.append(result)
+                            except KeyError:
+                                raise ValueError(
+                                    "There is something wrong with the csv "
+                                    "file or with the rules file. "
+                                    "Please, check it and restart the "
+                                    "execution. If the problem persists, "
+                                    "please contact us :)"
+                                )
+                        # We write the node values in the right csv file
+                        try:
+                            csv_writer = csv_writers[type]
+                        except KeyError:
+                            csv_name = self._nodetypes_rules_slugs[type]
+                            csv_file_path = os.path.join(self._history_path,
+                                                         "{}.csv".format(
+                                                             csv_name))
+                            csv_file = open(csv_file_path, 'w+')
+                            csv_writer = unicodecsv.writer(csv_file,
+                                                           encoding="utf-8")
+                            csv_files[type] = csv_file
+                            csv_writers[type] = csv_writer
+                            csv_file_node_id[type] = 1
+                            # Let's get the headers correctly
+                            csv_headers_basics = ['id', 'type']
+                            csv_headers = []
+                            headers_indexes = self._types_properties_indexes[
+                                type]
+                            not_mapped_headers = [
+                                self._headers[i] for i in headers_indexes]
+                            for header in not_mapped_headers:
+                                try:
+                                    csv_header = (
+                                        self._nodetypes_headers_mapping
+                                        [header])
+                                    csv_headers.append(csv_header)
+                                except:
+                                    # This exception is produced by the mapping
+                                    # with the casting function
+                                    pass
+                            csv_headers_basics.extend(csv_headers)
+                            csv_headers_basics.extend(csv_headers_castings)
+                            csv_writer.writerow(csv_headers_basics)
+                        # Let's add our node
+                        # We create a temp key to store the ids
+                        nodes_ids_key = "_".join(
+                            [str(elem) for elem in temp_node])
+                        if temp_node not in csv_nodes_treated:
+                            node_id = csv_file_node_id[type]
+                            nodes_id[nodes_ids_key] = node_id
+                            node_basics = [str(node_id), type]
+                            node_basics.extend(temp_node)
+                            csv_writer.writerow(node_basics)
+                            csv_nodes_treated.append(temp_node)
+                            csv_file_node_id[type] += 1
+                        relationships_node_ids.append(nodes_id[nodes_ids_key])
+                        # Let's update our structures for the relationships
+                        # file
+                        if type not in csv_relationships_headers:
+                            csv_relationships_headers.append(type)
+                    # We dump the values for our relationships
+                    if not csv_rels_headers_written:
+                        csv_writer_rels.writerow(csv_relationships_headers)
+                        csv_rels_headers_written = True
+                    csv_writer_rels.writerow(relationships_node_ids)
                 csv_row = csv_reader.next()
+                csv_row_length = len(csv_row) == len(columns)
+                csv_row_not_empty = len(csv_row) != 0
+                correct_row = csv_row_length and csv_row_not_empty
         except StopIteration:
             pass
         # We close the files
