@@ -280,6 +280,32 @@ class SylvaApp(object):
                 self._nodes_ids_mapping[type][local_id] = remote_id
             csv_writer.writerow(new_node)
 
+    def _dump_relationships(self, mode, reltype, relationships):
+        if mode == GET_OR_CREATE:
+            rel_index = 0
+            for relationship in relationships:
+                filtering_params = {}
+                try:
+                    # We filter by source_id and target_id
+                    filtering_params['source_id'] = (
+                        relationship['source_id'])
+                    filtering_params['target_id'] = (
+                        relationship['target_id'])
+                    results = (
+                        self._api.filter_relationships(
+                            reltype, params=filtering_params))
+                    # We access to the result to check if
+                    # everything is ok
+                    results['relationships'][0]['id']
+                except:
+                    self._api.post_relationships(
+                        reltype,
+                        params=[relationships[rel_index]])
+                rel_index += 1
+        if mode == CREATE:
+            self._api.post_relationships(reltype,
+                                         params=relationships)
+
     def _check_token(self):
         """
         We check the schema to allow the entire execution.
@@ -706,18 +732,14 @@ class SylvaApp(object):
                     if relationships_batch_limit == self.batch_size:
                         print("Dumping {} relationships...".format(
                             len(relationships)))
-                        if val == CREATE:
-                            self._api.post_relationships(reltype,
-                                                         params=relationships)
+                        self._dump_relationships(val, reltype, relationships)
                         # We reset the structures
                         relationships = []
                         relationships_batch_limit = 0
                     temp_rel_data = csv_reader.next()
             except StopIteration:
                 print("Dumping {} relationships...".format(len(relationships)))
-                if val == CREATE:
-                    self._api.post_relationships(reltype,
-                                                 params=relationships)
+                self._dump_relationships(val, reltype, relationships)
             csv_file.close()
 
     def populate_data(self):
