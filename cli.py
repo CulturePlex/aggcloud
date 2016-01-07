@@ -90,13 +90,20 @@ class SylvaApp(object):
         # Dictionary to store the index of each column that belongs to a type
         self._types_properties_indexes = {}
         # Checking the connection with the API
-        self._status(STATUS.API_CONNECTING,
-                     "Connecting with the SylvaDB API...")
-        self._api = API(token=self._token, graph_slug=self._graph)
-        # Settings
-        self._schema = json.loads(rules.SCHEMA)
-        self._schema_id = self._api.get_graph()['schema']
-        self._csv_columns_indexes = {}
+        try:
+            self._status(STATUS.API_CONNECTING,
+                         "Connecting with the SylvaDB API...")
+            self._api = API(token=self._token, graph_slug=self._graph)
+            # Settings
+            self._schema = json.loads(rules.SCHEMA)
+            self._schema_id = self._api.get_graph()['schema']
+            self._csv_columns_indexes = {}
+        except:
+            raise ValueError(
+                "There are problems connecting with the API."
+                "Maybe the server isn't available. Please, check it and "
+                "restart the execution."
+                "If the problem persists, please contact us :)")
 
     def _setup_nodetypes(self):
         nodetypes = rules.NODES

@@ -7,6 +7,22 @@ try:
 except ImportError:
     import json  # NOQA
 import os
+import sys
+
+
+class Unbuffered(object):
+    """ Class to treat the problem with the buffer in Windows """
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, data):
+        self.stream.write(data)
+        self.stream.flush()
+
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
+
+sys.stdout = Unbuffered(sys.stdout)
 
 APP_ROOT = os.path.dirname(__file__)
 RULES_PATH = os.environ.get("RULES_PATH",
@@ -25,6 +41,10 @@ def main():
     parser = GooeyParser(description=settings_msg)
     parser.add_argument("FileChooser", help=file_help_msg,
                         widget="FileChooser")
+    parser.add_argument("--batch-size",
+                        default=500,
+                        type=int,
+                        help='Batch size used to dump the data into SylvaDB')
 
     args = parser.parse_args()
 
