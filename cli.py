@@ -224,6 +224,12 @@ class SylvaApp(object):
         log_file.write(u"{}: {}\n".format(code, date_time))
         print(msg)
 
+    def _check_correct_row(self, row, columns):
+        csv_row_length = len(row) == len(columns)
+        csv_row_not_empty = len(row) != 0
+        correct_row = csv_row_length and csv_row_not_empty
+        return correct_row
+
     def _dump_nodes(self, csv_writer, type, mode, nodetype, columns, nodes,
                     nodes_list):
         nodes_remote_id = []
@@ -417,6 +423,11 @@ class SylvaApp(object):
         csv_relationships = open(csv_relationships_path, 'w+')
         csv_writer_rels = unicodecsv.writer(
             csv_relationships, encoding="utf-8")
+        # We create a temp file to control the nodes
+        csv_nodes_dumped_path = os.path.join(
+            self._history_path, "_{}.csv".format('nodes_dumped'))
+        csv_nodes_dumped = open(csv_nodes_dumped_path, 'a+', 0)
+        csv_nodes_dumped.close()
         csv_relationships_headers = []
         csv_rels_headers_written = False
         columns = csv_reader.next()
@@ -424,13 +435,9 @@ class SylvaApp(object):
         csv_files = {}
         csv_writers = {}
         csv_file_node_id = {}
-        nodes_id = {}
-        csv_nodes_treated = []
         try:
             csv_row = csv_reader.next()
-            csv_row_length = len(csv_row) == len(columns)
-            csv_row_not_empty = len(csv_row) != 0
-            correct_row = csv_row_length and csv_row_not_empty
+            correct_row = self._check_correct_row(csv_row, columns)
             while csv_row:
                 if correct_row:
                     relationships_node_ids = []
@@ -513,18 +520,39 @@ class SylvaApp(object):
                             csv_headers_basics.extend(csv_headers_castings)
                             csv_writer.writerow(csv_headers_basics)
                         # Let's add our node
-                        # We create a temp key to store the ids
-                        nodes_ids_key = "_".join(
-                            [str(elem) for elem in temp_node])
-                        if temp_node not in csv_nodes_treated:
+                        exists_node = False
+                        try:
                             node_id = csv_file_node_id[type]
-                            nodes_id[nodes_ids_key] = node_id
                             node_basics = [str(node_id), type]
                             node_basics.extend(temp_node)
+
+                            csv_nodes_dumped = open(csv_nodes_dumped_path,
+                                                    'r+')
+                            csv_reader_type = unicodecsv.reader(
+                                csv_nodes_dumped, encoding="utf-8")
+                            csv_reader_row = csv_reader_type.next()
+                            while csv_reader_row:
+                                if csv_reader_row[2:] == temp_node:
+                                    exists_node = True
+                                    rel_node_id = csv_reader_row[0]
+                                    break
+                                csv_reader_row = csv_reader_type.next()
+                        except StopIteration:
+                            pass
+                        csv_nodes_dumped.close()
+                        if not exists_node:
+                            rel_node_id = node_id
+
+                            csv_nodes_dumped = open(csv_nodes_dumped_path,
+                                                    'a+', 0)
+                            csv_writer_nodes = unicodecsv.writer(
+                                csv_nodes_dumped, encoding="utf-8")
+                            csv_writer_nodes.writerow(node_basics)
+                            csv_nodes_dumped.close()
+
                             csv_writer.writerow(node_basics)
-                            csv_nodes_treated.append(temp_node)
                             csv_file_node_id[type] += 1
-                        relationships_node_ids.append(nodes_id[nodes_ids_key])
+                        relationships_node_ids.append(rel_node_id)
                         # Let's update our structures for the relationships
                         # file
                         if type not in csv_relationships_headers:
@@ -535,14 +563,15 @@ class SylvaApp(object):
                         csv_rels_headers_written = True
                     csv_writer_rels.writerow(relationships_node_ids)
                 csv_row = csv_reader.next()
-                csv_row_length = len(csv_row) == len(columns)
-                csv_row_not_empty = len(csv_row) != 0
-                correct_row = csv_row_length and csv_row_not_empty
+                correct_row = self._check_correct_row(csv_row, columns)
         except StopIteration:
             pass
         # We close the files
         csv_root_file.close()
         csv_relationships.close()
+        nodes_dumped_file_name = csv_nodes_dumped.name
+        csv_nodes_dumped.close()
+        os.remove(nodes_dumped_file_name)
         for f in csv_files.values():
             f.close()
 
