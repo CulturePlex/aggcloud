@@ -175,3 +175,7 @@ def boolean(value):
         return bool(value)
     except ValueError:
         return value
+
+
+def default(value):
+    return value
