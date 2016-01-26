@@ -90,7 +90,7 @@ class SylvaApp(object):
         # Checking the connection with the API
         try:
             self._status(STATUS.API_CONNECTING,
-                         "Connecting with the SylvaDB API...")
+                         "Connecting to the API...")
             self._api = API(token=self._token, graph_slug=self._graph)
             # Settings
             self._schema = json.loads(rules.SCHEMA)
@@ -98,10 +98,10 @@ class SylvaApp(object):
             self._csv_columns_indexes = {}
         except:
             raise ValueError(
-                "There are problems connecting with the API."
-                "Maybe the server isn't available. Please, check it and "
-                "restart the execution."
-                "If the problem persists, please contact us :)")
+                "There are problems connecting to the API. "
+                "Maybe the server is not available at this moment. "
+                "Please, restart the execution once it is running. "
+                "If the problem persists, please contact us.")
 
     def _setup_nodetypes(self):
         nodetypes = rules.NODES
@@ -158,10 +158,10 @@ class SylvaApp(object):
                             self._rules_headers.append(param)
         except:
             raise ValueError(
-                "There are problems treating the nodetypes. "
-                "Maybe your schema isn't correct. Please, check it and "
-                "restart the execution. "
-                "If the problem persists, please contact us :)")
+                "There are problems handling the types. "
+                "Maybe the schema is not valid. "
+                "Please, check the schema and restart the execution. "
+                "If the problem persists, please contact us.")
 
     def _setup_reltypes(self):
         # Relationships settings
@@ -197,10 +197,10 @@ class SylvaApp(object):
                 self._rel_ids[type_slug] = id
         except:
             raise ValueError(
-                "There are problems treating the relationship types. "
-                "Maybe your schema isn't correct. Please, check it and "
-                "restart the execution. "
-                "If the problem persists, please contact us :)")
+                "There are problems handling the allowed relationships. "
+                "Maybe the schema is not correct. "
+                "Please, check the schema and restart the execution. "
+                "If the problem persists, please contact us.")
 
     def _hash(self, filename, blocksize=65536):
         _hash = hashlib.sha256()
@@ -313,30 +313,31 @@ class SylvaApp(object):
         We check the schema to allow the entire execution.
         """
         self._status(STATUS.CHECKING_TOKEN,
-                     "Checking API token...")
+                     "Verifying API token...")
         try:
             self._api.get_graph()
         except:
             raise ValueError(
-                "There are problems connecting with the API."
-                "Maybe your token isn't correct. Please, check it and "
-                "restart the execution."
-                "If the problem persists, please contact us :)")
+                "There are problems connecting to the API. "
+                "Maybe the token is not valid. "
+                "Please, check that the token is correct and "
+                "restart the execution. "
+                "If the problem persists, please contact us.")
 
     def _check_schema(self):
         """
         We check the schema to allow the entire execution.
         """
         self._status(STATUS.CHECKING_SCHEMA,
-                     "Checking schema...")
+                     "Verifying schema...")
         api_schema_hash = self._api.export_schema()
         app_schema_hash = self._schema
         if api_schema_hash == app_schema_hash:
             pass
         else:
             raise ValueError(
-                "The schema isn't correct. Please, check it and restart "
-                "the execution.")
+                "The schema is not valid. Please, check the schema "
+                "and restart the execution.")
 
     def format_data_columns(self):
         """
@@ -344,7 +345,7 @@ class SylvaApp(object):
         each type
         """
         self._status(STATUS.CSV_COLUMNS_FORMATTING,
-                     "Formatting the CSV columns...")
+                     "Formatting CSV columns...")
         csv_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_file, encoding="utf-8")
         # The first line are the headers, our schema properties
@@ -361,8 +362,9 @@ class SylvaApp(object):
         for rule_header in self._rules_headers:
             if rule_header not in self._headers:
                 raise ValueError(
-                    "CSV file headers do not match the rules file headers. "
-                    "Please, check it and restart the execution."
+                    "CSV file headers do not match those defined "
+                    "in the rules file. "
+                    "Please, check the headers and restart the execution."
                 )
         # Let's check if all the properties in the rules file are actually
         # defined in the schema
@@ -380,8 +382,9 @@ class SylvaApp(object):
             for prop in properties:
                 if prop not in type_properties:
                     raise ValueError(
-                        "Schema properties do not match the rules properties. "
-                        "Please, check it and restart the execution."
+                        "Schema properties do not match those defined "
+                        "in the rules file. Please, check the properties "
+                        "and restart the execution."
                     )
         csv_file.close()
 
@@ -390,7 +393,7 @@ class SylvaApp(object):
         We format the nodes data into their respective csv files
         """
         self._status(STATUS.DATA_NODES_FORMATTING,
-                     "Formatting data for nodes...")
+                     "Formatting nodes data...")
         csv_root_file = open(self._file_path, 'r')
         csv_reader = unicodecsv.reader(csv_root_file, encoding="utf-8")
         # We create the file to dump the relationships by row
@@ -446,11 +449,11 @@ class SylvaApp(object):
                                 temp_node.append(result)
                             except KeyError:
                                 raise ValueError(
-                                    "There is something wrong with the csv "
-                                    "file or with the rules file. "
-                                    "Please, check it and restart the "
+                                    "There is something wrong with the CSV "
+                                    "file or the rules file. "
+                                    "Please, check both and restart the "
                                     "execution. If the problem persists, "
-                                    "please contact us :)"
+                                    "please contact us."
                                 )
                         # We write the node values in the right csv file
                         try:
@@ -533,7 +536,8 @@ class SylvaApp(object):
         Populate the nodes data into SylvaDB
         """
         self._status(STATUS.DATA_NODES_DUMPING,
-                     "Dumping the data for nodes into SylvaDB...")
+                     "Writing nodes to the server. This may take a while, "
+                     "please, be patient...")
         for type, mode in self._nodetypes_mode.iteritems():
             # We open the files to read and write
             csv_name = self._nodetypes_rules_slugs[type]
@@ -594,7 +598,7 @@ class SylvaApp(object):
         neccesary ids.
         """
         self._status(STATUS.RELATIONSHIPS_PREPARING,
-                     "Preparing data for relationships...")
+                     "Preparing relationships...")
         csv_file_path = os.path.join(
             self._history_path, "_{}.csv".format('relationships'))
         csv_file = open(csv_file_path, 'r')
@@ -636,7 +640,7 @@ class SylvaApp(object):
         relationships
         """
         self._status(STATUS.DATA_RELATIONSHIPS_FORMATTING,
-                     "Formatting data for relationships...")
+                     "Formatting relationships data...")
         csv_file_path = os.path.join(
             self._history_path, "_{}.csv".format('relationships'))
         csv_file_root = open(csv_file_path, 'r')
@@ -690,7 +694,8 @@ class SylvaApp(object):
         Populate the relationships data into SylvaDB
         """
         self._status(STATUS.DATA_RELATIONSHIPS_DUMPING,
-                     "Dumping the data for relationships into SylvaDB...")
+                     "Writing relationships to the server. This may take a "
+                     "while, please, be patient...")
         for key, val in self._rel_ids.iteritems():
             csv_name = self._reltypes_rules_slugs[key]
             csv_file_path = os.path.join(
@@ -741,7 +746,7 @@ class SylvaApp(object):
             self.preparing_relationships()
             self.format_data_relationships()
             self.populate_relationships()
-            self._status(STATUS.EXECUTION_COMPLETED, "Execution completed! :)")
+            self._status(STATUS.EXECUTION_COMPLETED, "Execution completed!")
         except ValueError as e:
             print e.args
 

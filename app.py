@@ -25,6 +25,7 @@ class Unbuffered(object):
 sys.stdout = Unbuffered(sys.stdout)
 
 APP_ROOT = os.path.dirname(__file__)
+ICONS_PATH = os.path.join(APP_ROOT, "icons/")
 RULES_PATH = os.environ.get("RULES_PATH",
                             os.path.join(APP_ROOT, "rules.py"))
 rules = imp.load_source('rules', RULES_PATH)
@@ -33,7 +34,8 @@ running = True
 
 
 @Gooey(dump_build_config=True,
-       program_name="SylvaDB - client")
+       program_name="SylvaDB - client",
+       image_dir=ICONS_PATH)
 def main():
     settings_msg = rules.CONFIG_SETTINGS['settings_msg']
     file_help_msg = rules.CONFIG_SETTINGS['file_help_msg']
